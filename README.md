@@ -2,7 +2,7 @@
 <div align="center">
 
 # AlphaResearch
-<img src="./assets/overview.png" width="400" alt="alpha-research" />
+<img src="./assets/overview.png" width="800" alt="alpha-research" />
 
 </div>
 
