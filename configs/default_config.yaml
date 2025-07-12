@@ -129,6 +129,6 @@ rewardmodel:
   proposal_score_threshold: 2.0       # Only generate programs if proposal score >= threshold
   api_key: sk-2c3f1f58031b4b86afdb6a8192ea02e2                       # API key for API models
   base_url:  https://api.deepseek.com                     # Base URL for API models
-  jsonl_file: "results.jsonl"         # JSONL file for results
+  jsonl_file: "results/reward_results.jsonl"         # JSONL file for results
   max_retries: 50                     # Maximum number of retries
   retry_delay: 5                      # Delay between retries in seconds

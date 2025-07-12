@@ -85,7 +85,7 @@ Requirements:
 4. Use appropriate data structures and algorithms
 5. Make the code executable and testable
 
-Proposal:
+## Proposal:
 {proposal}
 
 """
@@ -128,6 +128,127 @@ Proposal:
 if __name__ == "__main__":
     result = main()
     print(f"Execution result: {result}")
+'''
+    
+    async def generate_evaluator_function(self, proposal: str, program: str) -> str:
+        """Generate an evaluation function based on the research proposal and initial program"""
+        
+        eval_prompt = f"""Based on the following research proposal and initial program implementation, create a comprehensive Python evaluation function.
+
+The evaluation function should:
+1. Import and run the program code from a given file path
+2. Measure relevant performance metrics based on the research domain
+3. Return a dictionary with numeric scores (0.0 to 1.0 range preferred)
+4. Handle errors gracefully and return error metrics if execution fails
+5. Be able to assess the quality and correctness of evolved versions of this program
+
+Research Proposal:
+{proposal}
+
+Initial Program:
+{program}
+
+Please generate a complete Python file with an 'evaluate' function that takes a program_path parameter and returns a dictionary of metrics. The function should be designed to evaluate programs that solve the research problem described in the proposal.
+
+Example structure:
+```python
+import subprocess
+import time
+import os
+import sys
+
+def evaluate(program_path):
+    '''
+    Evaluate a program and return performance metrics
+    
+    Args:
+        program_path: Path to the Python program file to evaluate
+        
+    Returns:
+        dict: Dictionary with metric names as keys and numeric scores as values
+    '''
+    metrics = {{}}
+    
+    try:
+        # Your evaluation logic here
+        # Run the program and measure performance
+        
+        return metrics
+    except Exception as e:
+        return {{"error": 0.0, "execution_failed": True}}
+```
+
+Make sure the evaluation function is specifically tailored to assess the research problem and can distinguish between better and worse solutions.
+"""
+
+        try:
+            response = await self.llm_ensemble.generate_with_context(
+                system_message="You are an expert in algorithm evaluation and performance measurement. Generate thorough evaluation functions that can accurately assess program quality.",
+                messages=[{"role": "user", "content": eval_prompt}]
+            )
+            
+            # Extract code from response
+            code_lines = []
+            in_code_block = False
+            for line in response.split('\n'):
+                if line.strip().startswith('```python'):
+                    in_code_block = True
+                    continue
+                elif line.strip() == '```' and in_code_block:
+                    in_code_block = False
+                    continue
+                elif in_code_block:
+                    code_lines.append(line)
+            
+            if code_lines:
+                return '\n'.join(code_lines)
+            else:
+                # If no code blocks found, return the whole response
+                return response
+                
+        except Exception as e:
+            print(f"Error generating evaluator function: {e}")
+            
+            # Fallback evaluator
+            return '''import subprocess
+import time
+import os
+import sys
+
+def evaluate(program_path):
+    """
+    Default evaluation function for research programs
+    
+    Args:
+        program_path: Path to the Python program file to evaluate
+        
+    Returns:
+        dict: Dictionary with metric names as keys and numeric scores as values
+    """
+    metrics = {}
+    
+    try:
+        # Basic execution test
+        start_time = time.time()
+        result = subprocess.run([sys.executable, program_path], 
+                              capture_output=True, text=True, timeout=30)
+        execution_time = time.time() - start_time
+        
+        # Basic metrics
+        metrics["execution_success"] = 1.0 if result.returncode == 0 else 0.0
+        metrics["execution_time"] = max(0.0, 1.0 - execution_time / 30.0)  # Normalize to 0-1
+        
+        if result.returncode == 0:
+            metrics["output_length"] = min(1.0, len(result.stdout) / 1000.0)
+        else:
+            metrics["error"] = 0.0
+            
+        return metrics
+        
+    except subprocess.TimeoutExpired:
+        return {"execution_success": 0.0, "timeout": 0.0}
+    except Exception as e:
+        return {"error": 0.0, "execution_failed": True}
 '''
     
     def save_files(self, proposal: str, program: str, score: float):
@@ -208,8 +329,19 @@ if __name__ == "__main__":
         program = await self.generate_initial_program(proposal)
         print(f"Generated program ({len(program)} characters)")
         
-        # Step 4: Save files
-        print("\n💾 Step 4: Saving files...")
+        # Step 3.5: Generate evaluator function based on idea/proposal
+        print("\n🧪 Step 3.5: Generating evaluation function...")
+        evaluator_code = await self.generate_evaluator_function(proposal, program)
+        print(f"Generated evaluator function ({len(evaluator_code)} characters)")
+        
+        # Save evaluator function to results/evaluator.py
+        evaluator_path = os.path.join(self.results_dir, "evaluator.py")
+        with open(evaluator_path, 'w', encoding='utf-8') as f:
+            f.write(evaluator_code)
+        print(f"Saved evaluator to: {evaluator_path}")
+        
+        # Step 4: Save other files
+        print("\n💾 Step 4: Saving proposal and program files...")
         proposal_path, program_path = self.save_files(proposal, program, score)
         
         # Step 5: Start evolution

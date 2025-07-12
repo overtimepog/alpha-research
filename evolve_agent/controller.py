@@ -271,15 +271,16 @@ Focus on:
 
         user_message = f"""Based on the following information, generate an improved research proposal:
 
-CURRENT PROPOSAL:
+- Current Proposal:
 {parent_proposal_str}
 
-CURRENT IMPLEMENTATION METRICS:
+- Current Program:
+```python
+{parent_program}
+```
+
+- Current Metrics
 {metrics_str}
-
-INSPIRATION FROM SUCCESSFUL APPROACHES:
-{inspirations_str}
-
 
 Please generate a new research proposal that:
 1. Addresses the limitations shown in the current metrics
@@ -487,14 +488,14 @@ Return the proposal as a clear, concise research abstract."""
                 # Parse the response
                 if self.config.diff_based_evolution:
                     diff_blocks = extract_diffs(llm_response)
-
                     if not diff_blocks:
                         logger.warning(f"Iteration {i+1}: No valid diffs found in response")
                         continue
-
                     # Apply the diffs
                     child_code = apply_diff(parent.code, llm_response)
                     changes_summary = format_diff_summary(diff_blocks)
+
+                    logger.info(f"Diff is applied successfully! ")
                 else:
                     # Parse full rewrite
                     new_code = parse_full_rewrite(llm_response, self.language)

@@ -9,9 +9,23 @@
 ## TODO:
 
 - Train a Reward Model (Done)
-- Run the system iteratively to get new algorithm (Need to find some problems)
+- Run the system iteratively to get new algorithm (Need to find some problems) (Done)
 - Compare with AlphaEvolve
 
+## Run AlphaResearch
+
+if you have `initial_program.py` and `initial_proposal.py`, please run
+```
+cd alpha-research
+python run.py
+```
+
+if not, please enter `start_alpha_research.py` and write a brief summary of your ideas, then run
+
+```
+cd alpha-research
+python start_alpha_research.py
+```
 
 ## EvolveAgent
 

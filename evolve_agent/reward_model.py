@@ -238,7 +238,7 @@ Write the score in the {BOX}.
             List[Dict]: List of results with 'title', 'score', 'evaluation', 'abstract', and 'gt_score'.
         """
         if isinstance(data[0], str):
-            data = [{"title": "", "abstract": d} for d in data]
+            data = [{"title": "", "gt_score":0, "abstract": d} for d in data]
 
         if self.config.model_type == "vllm":
             return await self.score_with_vllm(data)

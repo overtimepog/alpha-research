@@ -330,7 +330,6 @@ class Evaluator:
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
 
-            print(module)
             # Check if cascade functions exist
             if not hasattr(module, "evaluate_stage1"):
                 return await self._direct_evaluate(program_path)
