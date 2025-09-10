@@ -1,0 +1,11 @@
+Heilbronn in the unit square: maximize minimum triangle area
+
+Problem definition. Place n points in [0,1]×[0,1] to maximize the minimum area among all triangles formed by any 3 points. Let Δ(n) be the optimal value over all n-point configurations.
+
+Constraints. Points must lie within the unit square. The metric is min_area over all C(n,3) triples. Naïve evaluation is O(n^3); sampling can be used for large n.
+
+Optimization goal. Maximize min_area. The evaluator returns {min_area, n}.
+
+Best-known results (human). Asymptotically, Δ(n) decays polynomially; strongest known upper bounds are roughly n^{−8/7+o(1)} (up to subexponential factors), while lower bounds are on the order of 1/n^2. Exact optima known only for small n.
+
+Algorithm goal. Construct point sets with larger min_area. This baseline uses near-uniform hex/jittered layouts and returns points for evaluation; stronger methods include repulsive energy optimization, Lloyd/centroidal steps, and stochastic search with area-aware local moves.

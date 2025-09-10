@@ -1,0 +1,12 @@
+Spherical code: maximize minimum pairwise angle on the unit sphere
+
+Problem definition. Choose n points on S^{d−1} to maximize the minimum pairwise angle θ_min = min_{i<j} arccos(⟨p_i,p_j⟩).
+
+Constraints. Points are unit vectors (rows normalized). Metric is min_angle in radians.
+
+Optimization goal. Maximize min_angle. The evaluator returns {min_angle, n, dimension}.
+
+Best-known results (human). On S^2 (3D), small n optima coincide with symmetric polyhedra (e.g., tetrahedron, octahedron, icosahedral arrangements). For larger n or higher d, best codes come from numerical optimization; exact optimality is known only in limited cases.
+
+Algorithm goal. Construct codes with larger min_angle. This baseline seeds with symmetric configurations and uses farthest-point max–min; stronger methods include energy minimization, projected gradient/coordinate descent, and stochastic max–min refinement.
+
