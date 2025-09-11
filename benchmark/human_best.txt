@@ -1,0 +1,82 @@
+Alpha-Research Benchmark: Human-Best Values (with references)
+
+Note: Some benchmarks depend on problem parameters (n, d, etc.). Where the benchmark code fixes typical parameters in its initial programs, those are used. Otherwise we cite the best-known general results or mark as open.
+
+1) kissing_number
+- Objective: In dimension d, maximize the number of unit vectors with pairwise dot <= 1/2 (equivalently, kissing number K(d)).
+- Benchmark default: d = 11 (per `initial_program.py`).
+- Human best: K(11) ≥ 592.
+- Reference: M. Ganzhinov, "Kissing number in dimension 11 is at least 592" (PSU(4,2) construction), arXiv preprint, 2024.
+- Larger-is-better human best: 592.0
+
+2) spherical_code
+- Objective: On S^{d-1} (unit sphere), maximize the minimal pairwise angle for n points.
+- Benchmark default: n = 12 on S^2 (per `initial_program.py`).
+- Human best: For n = 12 on S^2, the icosahedron is optimal; minimal angle = arccos(1/√5) ≈ 63.4349488°.
+- References: 
+  - H. Schütte and B. L. van der Waerden, "Das Problem der dreizehn Kugeln," Math. Ann. 125 (1953), 325–334.
+  - L. Fejes Tóth, Regular Figures, 1964. See also J. H. Conway and N. J. A. Sloane, Sphere Packings, Lattices and Groups.
+- Larger-is-better human best: ≈ 1.107148717 radians (≈ 63.4349488°)
+
+3) heilbronn_in_the_unit_square (upper-bound verification)
+- Objective: Verify the asymptotic upper bound Δ(n) = O(n^{-8/7 - 1/2000}).
+- Metric (larger is better): score = 1 / (n^{8/7 + 1/2000} * min_area).
+- Benchmark default: n = 30.
+- References:
+  - J. Komlós, J. Pintz, E. Szemerédi, "On Heilbronn's triangle problem," J. London Math. Soc. (2) 24 (1981), 385–396.
+  - Follow-up literature and surveys summarized by T. Tao.
+- Example baseline (n=30): score baseline ≈ 20.0 (tunable; depends on construction quality).
+
+4) littlewood_polynomials
+- Objective: For ±1 coefficients c_k, minimize sup_{t} |∑ c_k e^{ikt}| on the unit circle (sup-norm). For degree n, the best growth is known to be on the order of √n.
+- Human best (general): There exist Littlewood polynomials with sup-norm ≤ C √n for an absolute constant C; exact optimal constants are unknown. Rudin–Shapiro polynomials give explicit O(√n) upper bounds.
+- References:
+  - P. Borwein and M. Mossinghoff, surveys on Littlewood polynomials (e.g., Experimental Mathematics 2008; related 2002–2010 papers).
+  - J.-P. Kahane, Some Random Series of Functions (re: random ±1 coefficients and bounds).
+- Larger-is-better metric: 1 / supnorm (grows like ≈ 1 / (C √n)); numeric value depends on n.
+
+5) riesz_energy
+- Objective: On [0,1], minimize E_s(x_1,…,x_n) = ∑_{i<j} 1/|x_i - x_j|^s; benchmark uses s = 1.
+- Human best (general guidance): In 1D, for s ∈ (0,1] many results and strong evidence favor nearly equally spaced configurations on [0,1]; exact formulas depend on whether endpoints are included. For equally spaced points including endpoints, a standard formula for s = 1 is E ≈ (n-1)(n H_{n-1} - (n-1)) when points are at i/(n-1).
+- References:
+  - D. P. Hardin and E. B. Saff (eds.), Discrete Energy on Rectifiable Sets, Springer, 2019.
+  - A. B. J. Kuijlaars and E. B. Saff, "Asymptotics for minimal discrete energy on the sphere," Trans. AMS 350 (1998) (general techniques; see also 1D discussions in the monograph above).
+- Larger-is-better metric: 1 / energy; for equally spaced n points incl. endpoints, 1 / E = 1 / ((n-1)(n H_{n-1} − (n-1))).
+
+6) sum_vs_difference_set
+- Objective: Maximize |A+B| / |A−B| over finite sets A,B (discrete indicator formulation in benchmark). This connects to MSTD (more sums than differences) phenomena.
+- Human best (general): MSTD sets (|A+A| > |A−A|) exist and can give ratios strictly larger than 1; precise extremal ratios depend on constraints and are an open line of research.
+- References:
+  - M. B. Nathanson, "Sets with more sums than differences," Integers 7 (2007), #A5.
+  - I. Z. Ruzsa, Sumsets and structure (various surveys in additive combinatorics).
+- Larger-is-better metric: |A+B| / |A−B| (no conversion).
+
+7) packing_circles
+- Objective: In the unit square, place n disjoint circles to maximize total sum of radii (benchmark’s objective). Note: This differs from the classical equal-radius packing problem.
+- Human best (general): The equal-radius variants have extensive tables; for maximizing sum of radii with variable sizes, sharp records are not standardized in the literature for n = 26, 32.
+- References:
+  - E. Specht, "Packings in squares and rectangles" (online tables) — equal-radius case.
+  - R. Graham, B. Lubachevsky, K. Nurmela, and P. Östergård, various papers on circle packing in a square.
+- Larger-is-better metric: total sum of radii (no conversion).
+
+8) minizing_raio_max_min_distance
+- Objective: For n points in [0,1]^d, minimize (max pairwise distance) / (min pairwise distance); benchmark queries (n,d) = (16,2) and (14,3).
+- Human best (general): This is a variant of dispersion/packing-covering tradeoff in a cube; sharp constants for the ratio under these constraints are not tabulated in the classical literature.
+- References: See general texts on sphere packing vs covering, and numerical optimization literature for blue-noise/Poisson-disc sampling in bounded domains.
+- Larger-is-better metric: use min/max (i.e., the reciprocal of the usual ratio). Examples from typical baselines: d=2, n=16 → ≈ 1/12.89 ≈ 0.0776; d=3, n=14 → ≈ 1/4.168 ≈ 0.2400.
+
+9) autoconvolution_peak_minimization
+- Objective: For nonnegative f on [0,1] with ∫ f = 1, minimize μ_∞ = sup_t (f * f)(t).
+- Human best (general): The exact optimum constant is open; best-known rigorous bounds are close to 1.5 (upper bounds from explicit constructions, lower bounds from analytic inequalities). Precise record values depend on smoothness/support constraints.
+- References: Surveys on autoconvolution inequalities (e.g., works following Erdős–Rényi type convolution problems; see also additive combinatorics notes and numerical studies in approximation theory).
+- Larger-is-better metric: 1 / μ_∞; indicative ≥ ≈ 1/1.5 ≈ 0.6667 given current upper bounds.
+
+10) third_autocorrelation_inequality
+- Objective: Improve bounds for a third-order autocorrelation constant C_3 (benchmark computes an upper bound C_upper_bound and reports its reciprocal).
+- Human best (indicative): Recent numerical constructions report 1 / C_upper_bound ≈ 0.6869 for representative discretizations; exact best constant remains open.
+- References: Literature on higher-order autocorrelation and correlation-inequality problems in additive combinatorics and signal processing; see problem surveys and recent preprints.
+- Larger-is-better metric: 1 / C_upper_bound; indicative ≈ 0.6869.
+
+Caveats and next steps
+- Several benchmarks encode families of problems parameterized by n and/or d; precise “human-best” values depend on those choices. Where known closed-form or sharp constants exist, they are reported; otherwise we cite authoritative surveys and note the open status.
+- If you’d like, specify exact (n,d) for `heilbronn_in_the_unit_square`, `packing_circles`, and `minizing_raio_max_min_distance`, and we can add numerical human-best targets or authoritative records if available.

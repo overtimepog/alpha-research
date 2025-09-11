@@ -69,7 +69,10 @@ def evaluate(program_path: str):
         result = evaluate_littlewood_supnorm(coeffs_obj, num_grid=16384)
         if result.get("valid", 0.0) != 1.0:
             return -1.0
-        return float(result["supnorm"])
+        supnorm = float(result["supnorm"])
+        if supnorm > 0 and np.isfinite(supnorm):
+            return 1.0 / supnorm  # larger-is-better
+        return -1.0
     except Exception:
         return -1.0
 

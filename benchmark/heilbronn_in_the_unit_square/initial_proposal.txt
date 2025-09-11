@@ -1,11 +1,19 @@
-Heilbronn in the unit square: maximize minimum triangle area
+Heilbronn in the unit square: verify asymptotic upper bound (n = 30)
 
-Problem definition. Place n points in [0,1]×[0,1] to maximize the minimum area among all triangles formed by any 3 points. Let Δ(n) be the optimal value over all n-point configurations.
+Problem redefinition. We treat Heilbronn’s problem at n = 30 as an upper-bound verification task. Given n points in [0,1]^2, define Δ(n) as the minimum triangle area over all triples. Recent results give an asymptotic upper bound
+  Δ(n) = O(n^{-8/7 - 1/2000}).
 
-Constraints. Points must lie within the unit square. The metric is min_area over all C(n,3) triples. Naïve evaluation is O(n^3); sampling can be used for large n.
+Metric (larger is better). For a candidate configuration P with min_area = Δ_P, we compute
+  scaled_min_area = n^{8/7 + 1/2000} * Δ_P,
+  score = 1 / scaled_min_area.
+A larger score indicates a smaller scaled_min_area, i.e., better agreement with (or improvement toward) the asymptotic upper bound.
 
-Optimization goal. Maximize min_area. The evaluator returns {min_area, n}.
+Constraints. Points must lie in [0,1]^2.
 
-Best-known results (human). Asymptotically, Δ(n) decays polynomially; strongest known upper bounds are roughly n^{−8/7+o(1)} (up to subexponential factors), while lower bounds are on the order of 1/n^2. Exact optima known only for small n.
+Evaluator. The evaluator computes Δ_P, then returns a dict including:
+  {"score", "scaled_min_area", "min_area", "n"},
+with score as the main metric (larger is better).
 
-Algorithm goal. Construct point sets with larger min_area. This baseline uses near-uniform hex/jittered layouts and returns points for evaluation; stronger methods include repulsive energy optimization, Lloyd/centroidal steps, and stochastic search with area-aware local moves.
+Baseline. We use a hexagonal-lattice-inspired construction with light jitter to generate n = 30 points.
+
+Goal. Construct point sets that minimize scaled_min_area (equivalently, maximize score), thereby pushing toward the asymptotic upper bound regime for n = 30.

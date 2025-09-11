@@ -44,7 +44,10 @@ def evaluate(program_path: str):
         result = evaluate_riesz_energy(pts, s=1.0)
         if result.get("valid", 0.0) != 1.0:
             return -1.0
-        return float(result["energy"])
+        energy = float(result["energy"])
+        if energy > 0 and np.isfinite(energy):
+            return 1.0 / energy  # larger-is-better
+        return -1.0
     except Exception:
         return -1.0
 

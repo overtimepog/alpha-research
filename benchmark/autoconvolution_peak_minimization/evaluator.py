@@ -35,7 +35,7 @@ def evaluate(program_path: str):
         program_path: Path to the Python program file to evaluate
         
     Returns:
-        dict: Dictionary with metric names as keys and numeric scores as values
+        float: Larger-is-better score = 1 / mu_inf (or -1.0 if invalid)
     """
     try:
         # Use importlib.util to dynamically load the program module
@@ -69,9 +69,12 @@ def evaluate(program_path: str):
         # Evaluate the step heights
         result = evaluate_C1_upper_std(step_heights)
         
-        # Return single value: mu_inf if valid, -1 if invalid
+        # Return larger-is-better: reciprocal of mu_inf if valid and positive
         if result["valid"] == 1.0:
-            return result["mu_inf"]
+            mu = float(result.get("mu_inf", float("inf")))
+            if mu > 0 and np.isfinite(mu):
+                return 1.0 / mu
+            return -1.0
         else:
             return -1.0
         
