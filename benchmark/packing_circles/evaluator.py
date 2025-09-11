@@ -38,7 +38,7 @@ def verify_circles(circles):
 def evaluate(program_path: str = "results/initial_program.py"):
     """
     Evaluate the pack_circles function from the given program file.
-    Returns the total radius sum if valid, otherwise raises an exception.
+    Returns dict with keys: score, result_26, result_32; score is sum of totals.
     """
     import importlib.util
     import sys
@@ -63,7 +63,9 @@ def evaluate(program_path: str = "results/initial_program.py"):
     if not all((valid_26, valid_32)):
         return {"error": -1.0}
     
+    score = float(total_r_26 + total_r_32)
     return {
+        "score": score,
         "result_26": total_r_26,
         "result_32": total_r_32
     }

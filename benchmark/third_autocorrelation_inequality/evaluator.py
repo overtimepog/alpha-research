@@ -21,6 +21,6 @@ def evaluate(program_path: str = "/data/zhuotaodeng/yzj/_para/alpha-research/mat
     convolution_3 = np.convolve(height_sequence_3, height_sequence_3)
     C_upper_bound = abs(2 * len(height_sequence_3) * np.max(convolution_3) / (np.sum(height_sequence_3)**2))
     
-    return {"1 / C_upper_bound": 1 / C_upper_bound} # 0.6869
+    return {"score": 1.0 / C_upper_bound}
 
 print(evaluate())

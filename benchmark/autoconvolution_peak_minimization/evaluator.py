@@ -31,30 +31,20 @@ def evaluate(program_path: str):
     """
     Evaluate a program that solves the autoconvolution peak minimization problem.
     
-    Args:
-        program_path: Path to the Python program file to evaluate
-        
-    Returns:
-        float: Larger-is-better score = 1 / mu_inf (or -1.0 if invalid)
+    Returns: dict with key 'score' = 1 / mu_inf (larger is better), or {'error': -1.0}
     """
     try:
-        # Use importlib.util to dynamically load the program module
         import importlib.util
-        
-        # Load the module from the given path
         spec = importlib.util.spec_from_file_location("program", program_path)
         program = importlib.util.module_from_spec(spec)
         sys.modules["program"] = program
         spec.loader.exec_module(program)
-        
-        # Look for step_heights or result in the loaded module
         step_heights = None
         if hasattr(program, 'step_heights'):
             step_heights = program.step_heights
         elif hasattr(program, 'h'):
             step_heights = program.h
         elif hasattr(program, 'main'):
-            # If there's a main function, try calling it to get step_heights
             result = program.main()
             if isinstance(result, np.ndarray):
                 step_heights = result
@@ -62,32 +52,23 @@ def evaluate(program_path: str):
                 step_heights = program.step_heights
             elif hasattr(program, 'h'):
                 step_heights = program.h
-        
         if step_heights is None:
-            return -1.0
-        
-        # Evaluate the step heights
+            return {"error": -1.0}
         result = evaluate_C1_upper_std(step_heights)
-        
-        # Return larger-is-better: reciprocal of mu_inf if valid and positive
         if result["valid"] == 1.0:
             mu = float(result.get("mu_inf", float("inf")))
             if mu > 0 and np.isfinite(mu):
-                return 1.0 / mu
-            return -1.0
+                return {"score": 1.0 / mu}
+            return {"error": -1.0}
         else:
-            return -1.0
-        
+            return {"error": -1.0}
     except Exception as e:
-        return -1.0
-
+        return {"error": -1.0}
 
 if __name__ == "__main__":
-    # CLI for debugging: evaluate initial_program.py by default, or a provided path
     try:
         default_path = os.path.join(os.path.dirname(__file__), "initial_program.py")
     except Exception:
         default_path = "initial_program.py"
-
     target = sys.argv[1] if len(sys.argv) > 1 else default_path
     print(json.dumps(evaluate(target), ensure_ascii=False, indent=2))

@@ -30,7 +30,6 @@ def evaluate(program_path: str):
 
         A = None
         B = None
-        # Prefer indicator arrays if present
         if hasattr(program, 'A_indicators') and hasattr(program, 'B_indicators'):
             A = program.A_indicators
             B = program.B_indicators
@@ -45,11 +44,13 @@ def evaluate(program_path: str):
                 A = program.A_indicators
                 B = program.B_indicators
         if A is None or B is None:
-            return -1.0
+            return {"error": -1.0}
         ratio = evaluate_ratio(A, B)
-        return float(ratio)
+        if ratio < 0:
+            return {"error": -1.0}
+        return {"score": float(ratio)}
     except Exception:
-        return -1.0
+        return {"error": -1.0}
 
 if __name__ == "__main__":
     try:

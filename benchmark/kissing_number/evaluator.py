@@ -6,6 +6,7 @@ import traceback
 import os
 import json
 
+
 def verify_kissing_configuration(sphere_centers: np.ndarray, atol: float = 1e-9):
     """
     Verifies if the given points form a valid kissing number configuration.
@@ -45,12 +46,8 @@ def verify_kissing_configuration(sphere_centers: np.ndarray, atol: float = 1e-9)
 def evaluate(program_path: str):
   """
   Evaluate a program that solves the kissing number problem.
-  
-  Args:
-    program_path: Path to the Python program file to evaluate
-    
-  Returns:
-    dict: Dictionary with metric names as keys and numeric scores as values
+  Returns dict with key 'score' = number of spheres (larger is better).
+  On failure/invalid, returns {'score': -1.0, ...}.
   """
   try:
     # Use importlib.util to dynamically load the program module
@@ -71,7 +68,7 @@ def evaluate(program_path: str):
       sphere_centers = program.main()
     
     if sphere_centers is None:
-      return {"error": -1.0, "no_sphere_centers": True}
+      return {"score": -1.0, "no_sphere_centers": True}
     
     # Verify the kissing configuration
     verify_kissing_configuration(sphere_centers)
@@ -80,14 +77,15 @@ def evaluate(program_path: str):
     num_spheres = sphere_centers.shape[0]
     dimension = sphere_centers.shape[1]
     
-    # Return metrics with proper string keys
+    # Return metrics with 'score'
     return {
+      "score": float(num_spheres),
       "num_spheres": float(num_spheres),
       "dimension": float(dimension)
     }
     
   except Exception as e:
-    return {"error": -1.0, "evaluation_error": True, "stderr": traceback.format_exc()}
+    return {"score": -1.0, "evaluation_error": True, "stderr": traceback.format_exc()}
 
 
 if __name__ == "__main__":

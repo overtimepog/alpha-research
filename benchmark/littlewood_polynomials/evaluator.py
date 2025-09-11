@@ -65,16 +65,16 @@ def evaluate(program_path: str):
             # fallback: try stdin for robustness
             coeffs_obj = _read_coeffs_from_stdin()
             if coeffs_obj is None:
-                return -1.0
+                return {"error": -1.0}
         result = evaluate_littlewood_supnorm(coeffs_obj, num_grid=16384)
         if result.get("valid", 0.0) != 1.0:
-            return -1.0
+            return {"error": -1.0}
         supnorm = float(result["supnorm"])
         if supnorm > 0 and np.isfinite(supnorm):
-            return 1.0 / supnorm  # larger-is-better
-        return -1.0
+            return {"score": 1.0 / supnorm}
+        return {"error": -1.0}
     except Exception:
-        return -1.0
+        return {"error": -1.0}
 
 if __name__ == "__main__":
     try:

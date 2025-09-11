@@ -40,16 +40,16 @@ def evaluate(program_path: str):
             elif hasattr(program, 'xs'):
                 pts = program.xs
         if pts is None:
-            return -1.0
+            return {"error": -1.0}
         result = evaluate_riesz_energy(pts, s=1.0)
         if result.get("valid", 0.0) != 1.0:
-            return -1.0
+            return {"error": -1.0}
         energy = float(result["energy"])
         if energy > 0 and np.isfinite(energy):
-            return 1.0 / energy  # larger-is-better
-        return -1.0
+            return {"score": 1.0 / energy}
+        return {"error": -1.0}
     except Exception:
-        return -1.0
+        return {"error": -1.0}
 
 if __name__ == "__main__":
     try:

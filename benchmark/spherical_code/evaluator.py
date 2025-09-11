@@ -10,7 +10,7 @@ EPS = 1e-12
 def evaluate_spherical_code_min_angle(points: np.ndarray) -> Dict[str, float]:
     P = np.asarray(points, dtype=float)
     if P.ndim != 2 or P.shape[0] < 2:
-        return {"valid": 0.0, "min_angle": 0.0, "n": 0.0, "dimension": 0.0}
+        return {"valid": 0.0, "min_angle": 0.0, "n": 0.0, "dimension": 0.0, "score": 0.0}
     # normalize rows onto the sphere
     norms = np.maximum(np.linalg.norm(P, axis=1, keepdims=True), EPS)
     P = P / norms
@@ -23,7 +23,7 @@ def evaluate_spherical_code_min_angle(points: np.ndarray) -> Dict[str, float]:
             ang = float(np.arccos(cosang))
             if ang < min_angle:
                 min_angle = ang
-    return {"valid": 1.0, "min_angle": float(min_angle), "n": float(n), "dimension": float(d)}
+    return {"valid": 1.0, "min_angle": float(min_angle), "n": float(n), "dimension": float(d), "score": float(min_angle)}
 
 def evaluate(program_path: str):
     try:
@@ -44,7 +44,7 @@ def evaluate(program_path: str):
         if pts is None:
             return {"error": -1.0}
         result = evaluate_spherical_code_min_angle(pts)
-        return {"min_angle": result["min_angle"], "n": result["n"], "dimension": result["dimension"]}
+        return {"score": result["score"], "min_angle": result["min_angle"], "n": result["n"], "dimension": result["dimension"]}
     except Exception:
         return {"error": -1.0}
 
