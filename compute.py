@@ -10,7 +10,7 @@ baselines = {
     "kissing_number_d11": {"s_baseline": 592.0, "higher_better": 1},
     "spherical_code_d3_n30": {"s_baseline": 0.6736467551690225, "higher_better": 1},
     "heilbronn_in_the_unit_square_n16": {"s_baseline": 7.0/341.0, "higher_better": 1},
-    "littlewood_polynomials_n512": {"s_baseline": 0.03125, "higher_better": 1},
+    "littlewood_polynomials_n512": {"s_baseline": 0.04105, "higher_better": 1},
     #"riesz_energy_n20_s1": {"s_baseline": 0.001013, "higher_better": 1},
     "MSTD_n30": {"s_baseline": 1.04, "higher_better": 1},
     "autoconvolution_peak_minimization": {"s_baseline": 0.6667, "higher_better": 1}
