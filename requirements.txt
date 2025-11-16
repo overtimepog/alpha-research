@@ -1,0 +1,30 @@
+# Core dependencies for EvolveAgent
+# Python 3.10+ recommended
+
+# Configuration and environment
+python-dotenv>=1.0.0
+pyyaml>=6.0
+
+# LLM API clients
+openai>=1.30.0
+
+# Data processing
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Transformers and ML (for reward model)
+transformers>=4.35.0
+datasets>=2.14.0
+
+# Optional: vLLM for local reward model inference
+# Only required if using model_type: "vllm" in reward model config
+# Comment out if you're only using OpenRouter API (model_type: "api")
+# vllm>=0.4.0
+
+# Optional: Additional utilities
+# aiofiles>=23.0.0  # Async file operations (currently commented out in code)
+
+# Development dependencies (optional)
+# pytest>=7.4.0  # For running tests
+# black>=23.0.0  # Code formatting
+# flake8>=6.0.0  # Linting

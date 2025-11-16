@@ -5,6 +5,7 @@
 max_iterations: 1000
 checkpoint_interval: 100
 log_level: "INFO"
+best_solution_dir: null
 
 # LLM configuration
 llm:
@@ -20,18 +21,18 @@ llm:
 database:
   population_size: 500
   archive_size: 100
-  
+
   # Island-based evolution settings
   num_islands: 5                    # Number of separate populations
   migration_interval: 50            # Migrate every 50 generations
   migration_rate: 0.1               # Migrate 10% of top programs
-  
+
   # Selection parameters
   elite_selection_ratio: 0.1
   exploration_ratio: 0.3
   exploitation_ratio: 0.7
   # Note: diversity_metric fixed to "edit_distance"
-  
+
   # Feature map dimensions for MAP-Elites
   feature_dimensions: ["score", "complexity"]
   feature_bins: 10
@@ -48,6 +49,20 @@ evaluator:
   max_retries: 3
   cascade_evaluation: true
   parallel_evaluations: 4
+
+# Reward model configuration (OpenRouter API)
+rewardmodel:
+  model_type: api                          # Only "api" is supported (vLLM removed)
+  model_name: "qwen/qwen-2.5-7b-instruct"  # OpenRouter model
+  base_url: "https://openrouter.ai/api/v1"
+  api_key: "${OPENROUTER_API_KEY}"         # Environment variable
+  temperature: 0.7
+  top_p: 0.95
+  max_tokens: 4096
+  proposal_score_threshold: 5.5
+  jsonl_file: "results/reward_results.jsonl"
+  max_retries: 5
+  retry_delay: 5
 
 # Evolution settings
 diff_based_evolution: true

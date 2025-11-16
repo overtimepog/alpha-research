@@ -7,6 +7,7 @@ max_iterations: 1000                  # Maximum number of evolution iterations
 checkpoint_interval: 50               # Save checkpoints every N iterations
 log_level: "INFO"                     # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 log_dir: null                         # Custom directory for logs (default: output_dir/logs)
+best_solution_dir: null               # Directory to auto-save best solution (default: output_dir/best_solution)
 random_seed: null                     # Random seed for reproducibility (null = random)
 
 # Evolution settings
@@ -34,7 +35,7 @@ llm:
 
   # API configuration
   api_base: "https://api.deepseek.com"  # Base URL for API (change for non-OpenAI models)
-  api_key: "sk-2c3f1f58031b4b86afdb6a8192ea02e2"                       # API key (defaults to OPENAI_API_KEY env variable)
+  api_key: "${OPENAI_API_KEY}"  # Set via environment variable
 
   # Generation parameters
   temperature: 0.7                    # Temperature for generation (higher = more creative)
@@ -119,16 +120,31 @@ evaluator:
   use_llm_feedback: false             # Use LLM to evaluate code quality
   llm_feedback_weight: 0.1            # Weight for LLM feedback in final score
 
-# Reward model configuration
+# Reward model configuration (OpenRouter API)
 rewardmodel:
-  model_type: vllm                  # Model type (vllm or api)
-  model_name: /data/zhuotaodeng/yzj/alpha_research_model/qwen25_grm_iclr_boxed/checkpoint-180                   # Model name (if null, uses default)
+  model_type: api                     # Model type - only "api" is supported (vLLM removed)
+  model_name: "qwen/qwen-2.5-7b-instruct"  # OpenRouter model name
+
+  # API configuration
+  base_url: "https://openrouter.ai/api/v1"  # OpenRouter API endpoint
+  api_key: "${OPENROUTER_API_KEY}"  # Set via environment variable
+                                       # Fallback order: OPENROUTER_API_KEY > OPENAI_API_KEY
+
+  # Generation parameters
   temperature: 0.7                    # Temperature for generation
   top_p: 0.95                         # Top-p sampling parameter
   max_tokens: 4096                    # Maximum tokens to generate
+
+  # Scoring threshold
   proposal_score_threshold: 5.5       # Only generate programs if proposal score >= threshold
-  # api_key: sk-2c3f1f58031b4b86afdb6a8192ea02e2                       # API key for API models
-  # base_url:  https://api.deepseek.com                     # Base URL for API models
-  jsonl_file: "results/reward_results.jsonl"         # JSONL file for results
-  max_retries: 50                     # Maximum number of retries
-  retry_delay: 5                      # Delay between retries in seconds
+
+  # Request parameters
+  jsonl_file: "results/reward_results.jsonl"  # JSONL file for results
+  max_retries: 5                      # Maximum retries (reduced for faster failures)
+  retry_delay: 5                      # Initial delay between retries (exponential backoff)
+
+# Recommended OpenRouter models (alternatives to qwen/qwen-2.5-7b-instruct):
+# - anthropic/claude-3-haiku - Fast, cost-effective
+# - google/gemini-2.0-flash-lite - Good balance of speed and quality
+# - mistralai/mistral-7b-instruct - Open source, reliable
+# - meta-llama/llama-3.1-8b-instruct - Strong performance
