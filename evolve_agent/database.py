@@ -733,6 +733,26 @@ class ProgramDatabase:
             else:
                 logger.info(f"New best program {program.id} replaces {old_id}")
 
+    def _filter_error_programs(self, program_ids: List[str]) -> List[str]:
+        """
+        Filter out programs that have errors in their metrics.
+
+        Args:
+            program_ids: List of program IDs to filter
+
+        Returns:
+            List of program IDs without errors
+        """
+        valid_programs = []
+        for pid in program_ids:
+            if pid in self.programs:
+                program = self.programs[pid]
+                # Check if program has an error metric with negative value
+                has_error = "error" in program.metrics and program.metrics.get("error", 0) < 0
+                if not has_error:
+                    valid_programs.append(pid)
+        return valid_programs
+
     def _sample_parent(self) -> Program:
         """
         Sample a parent program from the current island for the next evolution step
@@ -772,8 +792,9 @@ class ProgramDatabase:
                 # Use any available program
                 return next(iter(self.programs.values()))
 
-        # Clean up stale references and sample from current island
+        # Clean up stale references and filter out error programs
         valid_programs = [pid for pid in current_island_programs if pid in self.programs]
+        valid_programs = self._filter_error_programs(valid_programs)
 
         # Remove stale program IDs from island
         if len(valid_programs) < len(current_island_programs):
@@ -809,8 +830,9 @@ class ProgramDatabase:
             # Fallback to exploration if no archive
             return self._sample_exploration_parent()
 
-        # Clean up stale references in archive
+        # Clean up stale references and filter out error programs
         valid_archive = [pid for pid in self.archive if pid in self.programs]
+        valid_archive = self._filter_error_programs(valid_archive)
 
         # Remove stale program IDs from archive
         if len(valid_archive) < len(self.archive):
@@ -848,8 +870,16 @@ class ProgramDatabase:
         if not self.programs:
             raise ValueError("No programs available for sampling")
 
-        # Sample randomly from all programs
-        program_id = random.choice(list(self.programs.keys()))
+        # Filter out error programs and sample randomly
+        all_program_ids = list(self.programs.keys())
+        valid_program_ids = self._filter_error_programs(all_program_ids)
+
+        if not valid_program_ids:
+            # If all programs have errors, fall back to any program (shouldn't happen with bug fixer)
+            logger.warning("All programs have errors, sampling from error programs as fallback")
+            valid_program_ids = all_program_ids
+
+        program_id = random.choice(valid_program_ids)
         return self.programs[program_id]
 
     def _sample_inspirations(self, parent: Program, n: int = 5) -> List[Program]:

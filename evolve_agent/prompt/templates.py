@@ -191,6 +191,64 @@ Return your evaluation as a JSON object with the following format:
 }}
 """
 
+# Template for bug fixing
+BUG_FIX_TEMPLATE = """# Bug Fix Task
+
+The following program encountered an error during evaluation and needs to be fixed.
+
+## Research Proposal Context
+{proposal_text}
+
+## Error Information
+- **Error Type**: {error_type}
+- **Error Message**: {error_message}
+
+## Full Traceback
+```
+{traceback}
+```
+
+## Buggy Program
+```{language}
+{buggy_code}
+```
+
+## Task
+Analyze the error and generate SEARCH/REPLACE diffs to fix the bug. Focus on:
+1. Understanding the root cause from the traceback
+2. Making minimal changes to fix the specific error
+3. Preserving the research idea and overall program structure
+4. Ensuring tensor/array shapes are compatible
+5. Handling edge cases that may trigger the error
+
+You MUST use the exact SEARCH/REPLACE diff format:
+
+<<<<<<< SEARCH
+# Exact code to find (must match exactly, including indentation)
+=======
+# Fixed replacement code
+>>>>>>> REPLACE
+
+Example fix for tensor size mismatch:
+<<<<<<< SEARCH
+features = torch.stack([log_freq, recency, uncertainty], dim=-1)
+=======
+# Ensure all tensors have the same shape before stacking
+# Reshape to match the largest sequence length
+max_len = max(log_freq.size(0), recency.size(0), uncertainty.size(0))
+log_freq = F.pad(log_freq, (0, 0, 0, max_len - log_freq.size(0)))
+recency = F.pad(recency, (0, 0, 0, max_len - recency.size(0)))
+uncertainty = F.pad(uncertainty, (0, 0, 0, max_len - uncertainty.size(0)))
+features = torch.stack([log_freq, recency, uncertainty], dim=-1)
+>>>>>>> REPLACE
+
+IMPORTANT:
+- Each SEARCH section must exactly match code in the buggy program
+- Focus only on fixing the error, not on making other improvements
+- Test your fix mentally against the error message and traceback
+- Provide clear comments explaining the fix
+"""
+
 
 # Default templates dictionary
 DEFAULT_TEMPLATES = {
@@ -202,7 +260,8 @@ DEFAULT_TEMPLATES = {
     "previous_attempt": PREVIOUS_ATTEMPT_TEMPLATE,
     "top_program": TOP_PROGRAM_TEMPLATE,
     "evaluation": EVALUATION_TEMPLATE,
-    "diff_user": DIFF_USER_TEMPLATE_PROPOSAL
+    "diff_user": DIFF_USER_TEMPLATE_PROPOSAL,
+    "bug_fix": BUG_FIX_TEMPLATE
 }
 
 

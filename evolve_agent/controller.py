@@ -343,6 +343,116 @@ Return the proposal as a clear, concise research abstract."""
         
         return modified_proposal
 
+    async def _attempt_bug_fix(
+        self,
+        buggy_code: str,
+        error_metrics: Dict[str, Any],
+        proposal: List[str],
+        parent_code: str,
+        original_program_id: str,
+    ) -> Tuple[Optional[str], Optional[Dict[str, Any]], bool]:
+        """
+        Attempt to fix a program that encountered an error during evaluation.
+
+        Args:
+            buggy_code: The code that produced an error
+            error_metrics: Metrics dict containing error info (error_type, error_message, traceback)
+            proposal: The research proposal for context
+            parent_code: The parent program code (for reference)
+            original_program_id: The ID of the buggy program
+
+        Returns:
+            Tuple of (fixed_code, fixed_metrics, success)
+            - If successful: (code, metrics, True)
+            - If all attempts fail: (None, None, False)
+        """
+        # Check if bug fixing is enabled
+        if not self.config.evaluator.enable_bug_fixer:
+            return (None, None, False)
+
+        # Extract error information
+        error_type = error_metrics.get("error_type", "Unknown")
+        error_message = error_metrics.get("error_message", "No error message")
+        error_traceback = error_metrics.get("traceback", "No traceback available")
+
+        logger.info(f"Bug fixer activated for {error_type}: {error_message}")
+
+        max_attempts = self.config.evaluator.max_fix_attempts
+        current_code = buggy_code
+        current_error_info = {
+            "type": error_type,
+            "message": error_message,
+            "traceback": error_traceback,
+        }
+
+        for attempt in range(max_attempts):
+            logger.info(f"Bug fix attempt {attempt + 1}/{max_attempts}")
+
+            try:
+                # Build bug fix prompt
+                proposal_text = "\n".join(proposal) if proposal else "No proposal available"
+
+                # Get bug fix template
+                bug_fix_template = self.prompt_sampler.template_manager.get_template("bug_fix")
+
+                # Format the prompt
+                bug_fix_prompt = bug_fix_template.format(
+                    proposal_text=proposal_text,
+                    error_type=current_error_info["type"],
+                    error_message=current_error_info["message"],
+                    traceback=current_error_info["traceback"],
+                    buggy_code=current_code,
+                    language=self.language,
+                )
+
+                # Generate fix using LLM
+                system_message = "You are an expert debugger specializing in fixing runtime errors in research code."
+                llm_response = await self.llm_ensemble.generate_with_context(
+                    system_message=system_message,
+                    messages=[{"role": "user", "content": bug_fix_prompt}],
+                )
+
+                # Parse diffs from response
+                diff_blocks = extract_diffs(llm_response)
+
+                if not diff_blocks:
+                    logger.warning(f"Bug fix attempt {attempt + 1}: No valid diffs found in LLM response")
+                    continue
+
+                # Apply diffs to create fixed code
+                try:
+                    fixed_code = apply_diff(current_code, llm_response)
+                    logger.info(f"Bug fix attempt {attempt + 1}: Applied {len(diff_blocks)} diffs")
+                except Exception as diff_error:
+                    logger.warning(f"Bug fix attempt {attempt + 1}: Failed to apply diffs: {diff_error}")
+                    continue
+
+                # Evaluate the fixed code
+                fix_attempt_id = f"{original_program_id}_fix_{attempt + 1}"
+                fixed_metrics = await self.evaluator.evaluate_program(fixed_code, fix_attempt_id)
+
+                # Check if the fix was successful (no error in metrics)
+                if "error" not in fixed_metrics or fixed_metrics.get("error", 0) >= 0:
+                    logger.info(f"✅ Bug fix successful on attempt {attempt + 1}!")
+                    logger.info(f"Fixed metrics: {format_metrics_safe(fixed_metrics)}")
+                    return (fixed_code, fixed_metrics, True)
+                else:
+                    # Still has an error, update error info for next attempt
+                    logger.warning(f"Bug fix attempt {attempt + 1} still has errors")
+                    current_code = fixed_code
+                    current_error_info = {
+                        "type": fixed_metrics.get("error_type", "Unknown"),
+                        "message": fixed_metrics.get("error_message", "No error message"),
+                        "traceback": fixed_metrics.get("traceback", "No traceback available"),
+                    }
+
+            except Exception as e:
+                logger.warning(f"Bug fix attempt {attempt + 1} failed with exception: {e}")
+                continue
+
+        logger.warning(f"❌ All {max_attempts} bug fix attempts failed")
+        return (None, None, False)
+
     def _load_initial_program(self) -> str:
         """Load the initial program from file"""
         with open(self.initial_program_path, "r") as f:
@@ -530,6 +640,31 @@ Return the proposal as a clear, concise research abstract."""
 
                 # Handle artifacts if they exist
                 artifacts = self.evaluator.get_pending_artifacts(child_id)
+
+                # Check if program has an error and attempt to fix it
+                has_error = "error" in child_metrics and child_metrics.get("error", 0) < 0
+                if has_error:
+                    logger.warning(f"Iteration {i+1}: Program evaluation failed with {child_metrics.get('error_type', 'Unknown')}")
+
+                    # Attempt to fix the bug
+                    fixed_code, fixed_metrics, fix_success = await self._attempt_bug_fix(
+                        buggy_code=child_code,
+                        error_metrics=child_metrics,
+                        proposal=new_proposal,
+                        parent_code=parent.code,
+                        original_program_id=child_id,
+                    )
+
+                    if fix_success:
+                        # Use the fixed version
+                        child_code = fixed_code
+                        child_metrics = fixed_metrics
+                        changes_summary += " (auto-fixed)"
+                        logger.info(f"Iteration {i+1}: Bug automatically fixed, proceeding with fixed version")
+                    else:
+                        # All fix attempts failed, skip this iteration
+                        logger.warning(f"Iteration {i+1}: Unable to fix bug, skipping program (not added to database)")
+                        continue
 
                 # Create a child program with the new proposal
                 child_program = Program(
