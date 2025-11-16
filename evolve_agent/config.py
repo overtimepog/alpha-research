@@ -243,6 +243,11 @@ class EvaluatorConfig:
     timeout: int = 300  # Maximum evaluation time in seconds
     max_retries: int = 3
 
+    # Self-healing / bug fixing settings
+    enable_bug_fixer: bool = False  # Enable LLM-based automatic bug fixing
+    enable_pre_validation: bool = False  # Enable pre-evaluation validation checks
+    max_fix_attempts: int = 3  # Maximum number of bug fix attempts
+
     # Resource limits for evaluation
     memory_limit_mb: Optional[int] = None
     cpu_limit: Optional[float] = None
