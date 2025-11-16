@@ -1,0 +1,154 @@
+Per-Layer Adaptive Sparse Attention (PLASA) Benchmark - November 2025
+
+Objective
+=========
+Optimize the implementation of Per-Layer Adaptive Sparse Attention (PLASA) to achieve
+the lowest validation perplexity on a 4-layer transformer language model trained on
+WikiText-2 for 1000 steps.
+
+PLASA uses progressive sparsity scheduling based on layer specialization research:
+- Early layers (0-33%): Dense attention (k=L) for local pattern recognition
+- Middle layers (33-66%): Aggressive sparse (k=L/4) due to functional redundancy
+- Late layers (66-100%): Moderate sparse (k=L/2) for global context consolidation
+
+Background
+==========
+Recent research (Sep-Nov 2025) has shown that different transformer layers specialize
+in distinct functions:
+
+1. Layer Specialization (arXiv:2510.17469, Oct 2025):
+   - Early layers: Rapid specialization in pattern recognition and memorization
+   - Middle layers: Consolidate in-distribution generalization (but show redundancy)
+   - Late layers: Refine for out-of-distribution reasoning and global context
+
+2. Dynamic Attention Mask (DAM) - Oct 2025:
+   - Per-layer and per-head dynamic sparse attention masks
+   - Context-aware sparsity structures learned from frozen models
+   - Achieves long-sequence modeling without retraining
+
+3. DeepSeek Sparse Attention - Lightning Indexer (Nov 2025):
+   - Fast, lightweight token selection using FP8 precision
+   - Two-stage: approximate indexer → exact attention on top-k
+   - Mathematical formulation:
+     * Index scores: I_{t,s} = Σ_j w_{t,j} · ReLU(q_{t,j}^I · k_s^I)
+     * Top-k selection: S_t = TopK_k({ I^(ReLU)_{t,s} })
+     * Sparse attention only on selected tokens
+
+Mathematical Formulation
+========================
+The PLASA implementation must include:
+
+1. Lightning Indexer:
+   - Multi-head indexer queries: q_{t,j}^I ∈ R^{d_I} for j=1..H_I
+   - Shared indexer keys: k_s^I ∈ R^{d_I}
+   - Per-head weights: w_{t,j}
+   - Index score: I_{t,s} = Σ_j w_{t,j} · ReLU(q_{t,j}^I · k_s^I)
+
+2. Adaptive Top-K Selector:
+   - Causal masking: token t can only attend to s ≤ t
+   - Per-layer k values from progressive schedule
+   - Top-k selection: S_t = TopK_k({ I_{t,s} })
+
+3. Sparse Attention:
+   - Standard scaled dot-product attention on selected tokens
+   - RoPE (Rotary Position Embeddings) for positional encoding
+   - Attention mask from top-k selection
+
+4. Progressive Sparsity Schedule:
+   For a 4-layer model with sequence length L=128:
+   - Layer 0: k = 128 (100% dense)
+   - Layer 1: k = 32  (25% sparse)
+   - Layer 2: k = 32  (25% sparse)
+   - Layer 3: k = 64  (50% sparse)
+
+Architecture Specifications
+============================
+Fixed architecture for fair comparison:
+- 4 transformer layers (all using PLASA)
+- 128 hidden dimensions
+- 4 attention heads
+- 128 sequence length
+- ~1.5M parameters (including indexer)
+
+Training Configuration
+======================
+- Dataset: WikiText-2 (2M tokens cached)
+- Training: 1000 steps
+- Batch size: 2
+- Learning rate: 3e-4 (AdamW)
+- Gradient clipping: 1.0
+- Dropout: 0.1
+
+Evaluation Metrics
+==================
+Primary metric: Validation Perplexity (lower is better)
+Scoring: score = 1 / perplexity (higher score is better)
+
+Additional metrics reported:
+- Validation loss
+- Validation accuracy (next-token prediction)
+- Training loss
+
+Baseline Performance (initial_program.py)
+==========================================
+The provided initial implementation achieves on cosmopedia-v2:
+- Validation Perplexity: ~72-80 (expected range)
+- Validation Accuracy: ~50-55%
+- Score: ~0.0125-0.0139 (1/perplexity)
+
+Dataset: cosmopedia-v2 (HuggingFaceTB/smollm-corpus)
+Tokenizer: SmolLM-135M
+This matches the exact setup used in exp3_plasa_gdn_hybrid.
+
+This baseline implements the full PLASA algorithm with:
+- Lightning Indexer with 4 heads, 32-dim indexer space
+- Progressive sparsity schedule (PROGRESSIVE_SPARSE)
+- RoPE positional embeddings
+- Efficient top-k selection with causal masking
+
+Optimization Goals
+==================
+Potential improvements to explore:
+1. Indexer architecture: Number of heads, dimensionality, activation functions
+2. Sparsity schedules: Alternative schedules (AGGRESSIVE_MIDDLE, DENSE_TO_SPARSE)
+3. Top-k selection: Dynamic k based on input, learned threshold adaptation
+4. Weight initialization: Better initialization for indexer components
+5. Regularization: Dropout rates, gradient clipping strategies
+6. Efficiency optimizations: Quantization, sparse kernels, fused operations
+
+Constraints
+===========
+- Must use the progressive sparsity principle (different k per layer)
+- Must implement the Lightning Indexer concept (fast token selection)
+- Model architecture fixed (4 layers, 128 dim, 4 heads)
+- Training budget fixed (1000 steps)
+- Must be self-contained in initial_program.py (no external dependencies except PyTorch)
+
+Comparison Context
+==================
+This benchmark is based on Experiment 3 (exp3_plasa_gdn_hybrid) which showed:
+- PLASA with all 4 layers achieved 51.69% accuracy, 73.81 perplexity
+- PLASA outperformed full attention by 18.4% (lower loss)
+- PLASA outperformed uniform sparse attention (Exp1) by 33.9%
+- Training time: 35.5s for 1000 steps (74% faster than hybrids)
+
+The benchmark tests whether alternative implementations can match or exceed this
+baseline performance through architectural innovations, better sparsity schedules,
+or optimization techniques.
+
+Notes
+=====
+- Evaluator uses WikiText-2 if available, falls back to synthetic data
+- Results cached to avoid reprocessing
+- Validation evaluated on 100 batches for speed
+- Comparisons should use the same random seed (42) for reproducibility
+- Higher score is better (score = 1/perplexity)
+- Perplexity capped at 10000 to avoid division issues
+
+References
+==========
+- DeepSeek Sparse Attention (2025): Lightning Indexer, FP8 quantization
+- Dynamic Attention Mask (GitHub: ResponsibleAILab/DAM, Oct 2025)
+- Layer Specialization (arXiv:2510.17469, Oct 2025)
+- Transformer Layers as Painters (Emergence.ai, Aug 2024-2025)
+- Original PLASA implementation (exp3_plasa_gdn_hybrid, 2025)

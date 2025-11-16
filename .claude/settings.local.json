@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:*)",
+      "mcp__perplexity-ask__perplexity_ask",
+      "mcp__Context7__resolve-library-id",
+      "mcp__Context7__get-library-docs",
+      "Bash(python:*)",
+      "WebSearch",
+      "Bash(git log:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

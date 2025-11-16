@@ -3,7 +3,7 @@ import asyncio
 import logging
 import os
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '6'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 # logging.basicConfig(
 #     level=logging.DEBUG, 
 #     # format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', 
@@ -11,10 +11,10 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '6'
 # )
 
 evolve_agent = EvolveAgent(
-    initial_program_path="results/initial_program.py",
-    evaluation_file="results/evaluator.py",
-    initial_proposal_path="results/initial_proposal.txt",
-    config_path="configs/oai_config.yaml"
+    initial_program_path="benchmark/plasa_attention/initial_program.py",
+    evaluation_file="benchmark/plasa_attention/evaluator.py",
+    initial_proposal_path="benchmark/plasa_attention/initial_proposal.txt",
+    config_path="configs/openrouter_config.yaml",
 )
 
 async def main():

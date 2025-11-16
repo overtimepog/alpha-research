@@ -11,6 +11,10 @@ openai>=1.30.0
 # Data processing (minimal dependencies)
 numpy>=1.24.0
 
+torch
+torchtune
+torchao
+
 # Development dependencies (optional)
 # pytest>=7.4.0  # For running tests
 # black>=23.0.0  # Code formatting

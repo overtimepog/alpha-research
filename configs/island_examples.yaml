@@ -12,7 +12,7 @@ max_diversity:
     population_size: 1000
     archive_size: 200
 
-# Configuration for Focused Exploration (Few Islands, Rare Migration)  
+# Configuration for Focused Exploration (Few Islands, Rare Migration)
 # Use this when you want deeper exploration within each island
 # Good for: Problems with clear structure, shorter runs
 focused_exploration:
@@ -78,3 +78,14 @@ large_scale:
 #   - Simple problems → Fewer islands, more frequent migration
 #   - Long runs → More islands to maintain diversity
 #   - Short runs → Fewer islands for faster convergence
+
+# Note: All configurations above should be combined with reward model settings.
+# Default reward model configuration (applies to all examples):
+rewardmodel:
+  model_type: api                          # Only "api" is supported (vLLM removed)
+  model_name: "qwen/qwen-2.5-7b-instruct"  # OpenRouter model
+  base_url: "https://openrouter.ai/api/v1"
+  api_key: "${OPENROUTER_API_KEY}"         # Set via environment variable
+  proposal_score_threshold: 5.5
+  max_retries: 5
+  retry_delay: 5

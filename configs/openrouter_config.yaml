@@ -99,7 +99,7 @@ evaluator:
 # Reward model configuration - OpenRouter API
 rewardmodel:
   model_type: api
-  model_name: "moonshotai/kimi-k2-thinking"
+  model_name: "google/gemini-2.5-flash-lite"
 
   # Recommended models for LLM-as-judge scoring (November 2025):
   # Best for structured evaluation & summarization:
@@ -138,6 +138,13 @@ rewardmodel:
   # For best results, use non-thinking models like gemini-2.5-flash or qwen-2.5-7b-instruct
   enable_summarization: true  # Generate concise summaries for console logs
   summary_max_tokens: 150  # Token limit for summaries (shorter = faster/cheaper)
+
+  # Reasoning/thinking model support (November 2025 feature)
+  # Enables reasoning traces for thinking models like sherlock-think-alpha, kimi-k2-thinking
+  enable_reasoning: true  # Enable reasoning parameter in API requests
+  reasoning_effort: "medium"  # Effort level: "low" (~20%), "medium" (~50%), "high" (~80%) of max_tokens
+  # reasoning_max_tokens: 2000  # Optional: directly specify max reasoning tokens (overrides effort)
+  log_reasoning: true  # Log reasoning traces to console for transparency
 
 # Recommended OpenRouter models for evolution:
 # Fast & Cost-Effective:
