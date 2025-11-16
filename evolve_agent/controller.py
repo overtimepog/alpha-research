@@ -582,6 +582,8 @@ Return the proposal as a clear, concise research abstract."""
                 if self.database.best_program_id == child_program.id:
                     logger.info(f"🌟 New best solution found at iteration {i+1}: {child_program.id}")
                     logger.info(f"Metrics: {format_metrics_safe(child_program.metrics)}")
+                    # Auto-save the new best solution
+                    self._save_best_solution_incremental(child_program)
 
                 # Save checkpoint
                 if (i + 1) % self.config.checkpoint_interval == 0:
@@ -790,6 +792,74 @@ Return the proposal as a clear, concise research abstract."""
             )
 
         logger.info(f"Saved best program to {code_path} with program info to {info_path}")
+
+    def _save_best_solution_incremental(self, program: Program) -> None:
+        """
+        Save the best solution to a configurable directory, replacing any previous best solution.
+        Called whenever a new best solution is found during evolution.
+
+        Args:
+            program: The new best program to save
+        """
+        # Determine the directory from config or use default
+        if self.config.best_solution_dir:
+            best_solution_dir = self.config.best_solution_dir
+        else:
+            best_solution_dir = os.path.join(self.output_dir, "best_solution")
+
+        os.makedirs(best_solution_dir, exist_ok=True)
+
+        # Delete any existing best solution files in the directory
+        # This ensures only the current best solution exists
+        import glob
+        existing_files = glob.glob(os.path.join(best_solution_dir, "best_solution*"))
+        for file_path in existing_files:
+            try:
+                os.remove(file_path)
+                logger.debug(f"Removed old best solution file: {file_path}")
+            except Exception as e:
+                logger.warning(f"Failed to remove old file {file_path}: {e}")
+
+        # Save the code file
+        code_filename = f"best_solution{self.file_extension}"
+        code_path = os.path.join(best_solution_dir, code_filename)
+        with open(code_path, "w") as f:
+            f.write(program.code)
+
+        # Save the proposal if available
+        if program.proposal:
+            proposal_path = os.path.join(best_solution_dir, "best_solution_proposal.txt")
+            with open(proposal_path, "w") as f:
+                # proposal is a List[str], join them with newlines
+                if isinstance(program.proposal, list):
+                    f.write("\n".join(program.proposal))
+                else:
+                    f.write(str(program.proposal))
+
+        # Save metadata
+        info_path = os.path.join(best_solution_dir, "best_solution_info.json")
+        with open(info_path, "w") as f:
+            import json
+
+            json.dump(
+                {
+                    "id": program.id,
+                    "generation": program.generation,
+                    "iteration": program.iteration_found,
+                    "timestamp": program.timestamp,
+                    "parent_id": program.parent_id,
+                    "metrics": program.metrics,
+                    "language": program.language,
+                    "saved_at": time.time(),
+                },
+                f,
+                indent=2,
+            )
+
+        logger.info(
+            f"💾 Auto-saved best solution to {best_solution_dir} "
+            f"(Score: {format_metrics_safe(program.metrics)})"
+        )
 
 if __name__=='__main__':
     # Initialize the system
