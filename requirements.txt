@@ -5,26 +5,18 @@
 python-dotenv>=1.0.0
 pyyaml>=6.0
 
-# LLM API clients
+# LLM API clients (OpenRouter-compatible)
 openai>=1.30.0
 
-# Data processing
+# Data processing (minimal dependencies)
 numpy>=1.24.0
-pandas>=2.0.0
-
-# Transformers and ML (for reward model)
-transformers>=4.35.0
-datasets>=2.14.0
-
-# Optional: vLLM for local reward model inference
-# Only required if using model_type: "vllm" in reward model config
-# Comment out if you're only using OpenRouter API (model_type: "api")
-# vllm>=0.4.0
-
-# Optional: Additional utilities
-# aiofiles>=23.0.0  # Async file operations (currently commented out in code)
 
 # Development dependencies (optional)
 # pytest>=7.4.0  # For running tests
 # black>=23.0.0  # Code formatting
 # flake8>=6.0.0  # Linting
+
+# Notes:
+# - All LLM operations use OpenRouter API (no local models required)
+# - vLLM, transformers, datasets, and pandas are NO LONGER NEEDED
+# - Reward model is API-based only (model_type: "api")

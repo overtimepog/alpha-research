@@ -1,254 +1,286 @@
+"""
+Reward Model for scoring research proposals using OpenRouter API.
+
+This module provides LLM-based evaluation of research proposals, scoring them
+on clarity, novelty, technical rigor, and potential impact using the latest
+best practices for LLM-as-a-judge approaches (2025).
+"""
+
 import re
 import os
 import json
-import time
+import asyncio
+import logging
 from typing import List, Dict, Optional, Any
 from pathlib import Path
 
-import asyncio
-# import aiofiles
-import numpy as np
-import pandas as pd
-from vllm import LLM, SamplingParams
-from openai import AsyncOpenAI
-from transformers import AutoTokenizer
-from datasets import load_dataset
+from openai import AsyncOpenAI, APIError, APITimeoutError, RateLimitError
 
 from evolve_agent.config import RewardModelConfig
+
+logger = logging.getLogger(__name__)
 
 
 class RewardModel:
     """
-    A class to score research abstracts or proposals based on clarity, novelty, technical rigor,
-    and potential impact using either a local vLLM model or an external API model.
+    Score research proposals using OpenRouter API with LLM-as-a-judge approach.
+
+    Implements best practices from 2025 research:
+    - Lower temperature (0.2-0.3) for consistent evaluations
+    - Exponential backoff for retries
+    - Score-based reward modeling with boxed format
+    - Structured error handling and logging
     """
-    
-    BOX = r"\boxed{}"
-    SYSTEM_PROMPT = "You are an expert reviewer tasked with evaluating the quality of a research proposal."
-    SCORING_PROMPT = f"""
-Your goal is to assign a score between 1 and 10 based on the proposal's clarity, novelty, technical rigor, and potential impact. Here are the criteria:
-1. Read the following proposal carefully and provide a score from 1 to 10. 
-2. Score 6 means slightly higher than the borderline, 5 is slightly lower than the borderline.
-Write the score in the {BOX}.
-**idea**:
+
+    BOX_PATTERN = r"\boxed{}"
+
+    SYSTEM_PROMPT = """You are an expert reviewer tasked with evaluating the quality of a research proposal.
+Your evaluations must be consistent, objective, and based on clear criteria."""
+
+    SCORING_PROMPT_TEMPLATE = """Carefully evaluate the following research proposal and assign a score from 1 to 10.
+
+Evaluation Criteria:
+- Clarity: Is the proposal well-written and easy to understand?
+- Novelty: Does it introduce new ideas or approaches?
+- Technical Rigor: Is the methodology sound and well-justified?
+- Potential Impact: Could this research make a significant contribution?
+
+Scoring Guidelines:
+- Scores 1-3: Poor quality, major flaws
+- Scores 4-5: Below average, significant issues
+- Score 6: Slightly above borderline, acceptable
+- Scores 7-8: Good quality, solid contribution
+- Scores 9-10: Excellent, exceptional contribution
+
+After your evaluation, provide your final score in this exact format: \\boxed{{X.X}}
+
+Research Proposal:
+{proposal}
 """
 
     def __init__(self, config: RewardModelConfig):
         """
-        Initialize the RewardModel.
+        Initialize the RewardModel with OpenRouter API.
 
         Args:
-            config (RewardModelConfig): Configuration object containing model_type, model_name, api_key, base_url,
-                                       jsonl_file, max_retries, retry_delay, temperature, top_p, max_tokens.
+            config (RewardModelConfig): Configuration with api_key, base_url, and parameters.
+
+        Raises:
+            ValueError: If API key or base URL is missing.
         """
         self.config = config
 
-        if self.config.model_type == "vllm":
-            self.llm = LLM(model=self.config.model_name, gpu_memory_utilization=0.95)
-            self.tokenizer = AutoTokenizer.from_pretrained(self.config.model_name)
-        elif self.config.model_type == "api":
-            if not self.config.api_key or not self.config.base_url:
-                raise ValueError("API key and base URL must be provided for API model type.")
-            self.client = AsyncOpenAI(api_key=self.config.api_key, base_url=self.config.base_url)
-        else:
-            raise ValueError("model_type must be 'vllm' or 'api'.")
+        if not self.config.api_key or not self.config.base_url:
+            raise ValueError("API key and base URL are required for OpenRouter API.")
 
-        # Ensure the directory for jsonl_file exists
-        os.makedirs(os.path.dirname(self.config.jsonl_file) or ".", exist_ok=True)
+        # Initialize AsyncOpenAI client with timeout and retry configuration
+        self.client = AsyncOpenAI(
+            api_key=self.config.api_key,
+            base_url=self.config.base_url,
+            timeout=60.0,  # 60 second timeout
+            max_retries=0,  # We handle retries manually for better control
+        )
+
+        # Ensure output directory exists
+        if self.config.jsonl_file:
+            os.makedirs(os.path.dirname(self.config.jsonl_file) or ".", exist_ok=True)
+
+        logger.info(f"Initialized RewardModel with OpenRouter API: {self.config.base_url}")
+        logger.info(f"Model: {self.config.model_name}, Temperature: {self.config.temperature}")
 
     def parse_score_from_text(self, text: str) -> float:
         """
-        Parse the score from the model's output text.
+        Parse the numerical score from the model's output text.
+
+        Looks for score in \\boxed{X.X} format as per latest best practices
+        for structured LLM output parsing.
 
         Args:
-            text (str): Model output containing the score in \boxed{} format.
+            text (str): Model output containing the score.
 
         Returns:
             float: Parsed score between 0 and 10, or -1.0 if invalid.
         """
-        match = re.search(r'\\boxed\{(\d*\.?\d*)\}', text)
+        # Look for \boxed{score} pattern
+        match = re.search(r'\\boxed\{(\d*\.?\d+)\}', text)
         if match:
             try:
                 score = float(match.group(1))
                 if 0 <= score <= 10:
                     return score
+                logger.warning(f"Score {score} outside valid range [0, 10]")
             except ValueError:
-                pass
+                logger.warning(f"Could not parse score from: {match.group(1)}")
+
+        logger.debug(f"No valid score found in text: {text[:200]}...")
         return -1.0
 
-    async def load_processed_ids(self) -> set:
+    async def _score_single_proposal(
+        self,
+        proposal: str,
+        title: str = "",
+        max_retries: Optional[int] = None
+    ) -> Dict[str, Any]:
         """
-        Load titles of already processed abstracts from the JSONL file.
+        Score a single research proposal with retry logic and exponential backoff.
 
-        Returns:
-            set: Set of processed abstract titles with valid scores.
-        """
-        processed_ids = set()
-        # if os.path.exists(self.config.jsonl_file):
-        #     async with aiofiles.open(self.config.jsonl_file, 'r', encoding='utf-8') as f:
-        #         async for line in f:
-        #             try:
-        #                 data = json.loads(line.strip())
-        #                 if data.get('score', -1.0) != -1.0:
-        #                     processed_ids.add(data['title'])
-        #             except json.JSONDecodeError:
-        #                 print(f"Warning: Skipping invalid JSON line in {self.config.jsonl_file}")
-        return processed_ids
-
-    async def write_result_to_jsonl(self, result: Dict):
-        """
-        Write a single result to the JSONL file if the score is valid.
+        Implements best practices from 2025 research:
+        - Exponential backoff for retries
+        - Specific error handling for rate limits and timeouts
+        - Detailed logging for debugging
 
         Args:
-            result (Dict): Result dictionary containing title, score, evaluation, abstract, and gt_score.
-        """
-        # if result['score'] != -1.0:
-        #     async with aiofiles.open(self.config.jsonl_file, 'a', encoding='utf-8') as f:
-        #         await f.write(json.dumps(result, ensure_ascii=False) + '\n')
-
-    async def score_with_vllm(self, data: List[Dict]) -> List[Dict]:
-        """
-        Score abstracts using a local vLLM model.
-
-        Args:
-            data (List[Dict]): List of dictionaries containing 'title', 'abstract', and 'gt_score'.
+            proposal (str): The research proposal text to score.
+            title (str): Optional title for logging purposes.
+            max_retries (int, optional): Override config max_retries.
 
         Returns:
-            List[Dict]: List of results with 'title', 'score', 'evaluation', 'abstract', and 'gt_score'.
+            Dict containing score, evaluation text, and metadata.
         """
-        prompts = [
-            self.tokenizer.apply_chat_template(
-                [
-                    {"role": "system", "content": self.SYSTEM_PROMPT},
-                    {"role": "user", "content": self.SCORING_PROMPT + item["title"] + "\n" + item["abstract"]}
-                ],
-                tokenize=False,
-                add_generation_prompt=True,
-                enable_thinking=False
-            )
-            for item in data
+        max_retries = max_retries or self.config.max_retries
+        retry_count = 0
+        last_error = None
+
+        # Prepare the prompt
+        prompt = self.SCORING_PROMPT_TEMPLATE.format(proposal=proposal)
+        messages = [
+            {"role": "system", "content": self.SYSTEM_PROMPT},
+            {"role": "user", "content": prompt}
         ]
 
-        sampling_params = SamplingParams(
-            temperature=self.config.temperature,
-            top_p=self.config.top_p,
-            max_tokens=self.config.max_tokens,
-        )
+        while retry_count <= max_retries:
+            try:
+                logger.debug(f"Scoring attempt {retry_count + 1}/{max_retries + 1} for: {title or 'proposal'}")
 
-        # vLLM is synchronous, so we run it in the default executor
-        outputs = await asyncio.get_event_loop().run_in_executor(None, lambda: self.llm.generate(prompts, sampling_params))
+                response = await self.client.chat.completions.create(
+                    model=self.config.model_name,
+                    messages=messages,
+                    temperature=self.config.temperature,  # Lower temperature for consistency
+                    max_tokens=self.config.max_tokens,
+                    top_p=self.config.top_p,
+                )
 
-        results = []
-        for output, item in zip(outputs, data):
-            output_text = output.outputs[0].text.strip()
-            score = self.parse_score_from_text(output_text)
-            result = {
-                "title": item["title"],
-                "score": score,
-                "evaluation": output_text,
-                "abstract": item["abstract"],
-                "gt_score": item["gt_score"]
-            }
-            await self.write_result_to_jsonl(result)
-            results.append(result)
+                output_text = response.choices[0].message.content.strip()
+                score = self.parse_score_from_text(output_text)
 
-        return results
+                if score != -1.0:
+                    # Valid score obtained
+                    logger.info(f"Successfully scored '{title}': {score}/10")
+                    return {
+                        "title": title,
+                        "score": score,
+                        "evaluation": output_text,
+                        "proposal": proposal,
+                        "retries": retry_count,
+                        "success": True
+                    }
 
-    async def score_with_api(self, data: List[Dict]) -> List[Dict]:
-        """
-        Score abstracts using an external API model.
+                # Invalid score format, retry
+                logger.warning(f"Invalid score format in response for '{title}', retrying...")
+                retry_count += 1
 
-        Args:
-            data (List[Dict]): List of dictionaries containing 'title', 'abstract', and 'gt_score'.
+            except RateLimitError as e:
+                logger.warning(f"Rate limit hit for '{title}': {e}")
+                last_error = e
+                retry_count += 1
 
-        Returns:
-            List[Dict]: List of results with 'title', 'score', 'evaluation', 'abstract', and 'gt_score'.
-        """
-        processed_ids = await self.load_processed_ids()
-        data_to_process = [item for item in data if item['title'] not in processed_ids]
-        print(f"Total abstracts: {len(data)}, To process: {len(data_to_process)}, Already processed: {len(processed_ids)}")
+            except APITimeoutError as e:
+                logger.warning(f"Timeout for '{title}': {e}")
+                last_error = e
+                retry_count += 1
 
-        prompts = [
-            [
-                {"role": "system", "content": self.SYSTEM_PROMPT},
-                {"role": "user", "content": self.SCORING_PROMPT + item["title"] + "\n" + item["abstract"]}
-            ]
-            for item in data_to_process
-        ]
+            except APIError as e:
+                logger.error(f"API error for '{title}': {e}")
+                last_error = e
+                retry_count += 1
 
-        results = []
-        for prompt, item in zip(prompts, data_to_process):
-            retries = 0
-            score = -1.0
-            output_text = ""
+            except Exception as e:
+                logger.error(f"Unexpected error for '{title}': {e}")
+                last_error = e
+                retry_count += 1
 
-            while score == -1.0 and retries < self.config.max_retries:
-                try:
-                    response = await self.client.chat.completions.create(
-                        model=self.config.model_name,
-                        messages=prompt,
-                        temperature=0,  # API uses fixed temperature as per original code
-                        max_tokens=1000,  # API uses fixed max_tokens as per original code
-                        top_p=1.0  # API uses fixed top_p as per original code
-                    )
-                    output_text = response.choices[0].message.content.strip()
-                    score = self.parse_score_from_text(output_text)
-                except Exception as e:
-                    print(f"Error processing {item['title']}: {e}")
-                
-                if score == -1.0:
-                    retries += 1
-                    print(f"Invalid score for abstract: {item['title']}, Retry {retries}/{self.config.max_retries}")
-                    await asyncio.sleep(self.config.retry_delay)
+            # Exponential backoff before retry (best practice from 2025 research)
+            if retry_count <= max_retries:
+                backoff_time = self.config.retry_delay * (2 ** (retry_count - 1))
+                logger.debug(f"Waiting {backoff_time}s before retry...")
+                await asyncio.sleep(backoff_time)
 
-            result = {
-                "title": item["title"],
-                "score": score,
-                "gt_score": item["gt_score"],
-                "evaluation": output_text,
-                "abstract": item["abstract"]
-            }
-            await self.write_result_to_jsonl(result)
-            results.append(result)
-
-            if score == -1.0:
-                print(f"Failed to get valid score for abstract: {item['title']} after {self.config.max_retries} retries")
-
-        # Include previously processed results
-        # if processed_ids:
-        #     async with aiofiles.open(self.config.jsonl_file, 'r', encoding='utf-8') as f:
-        #         async for line in f:
-        #             try:
-        #                 result = json.loads(line.strip())
-        #                 if result['title'] in processed_ids:
-        #                     results.append(result)
-        #             except json.JSONDecodeError:
-        #                 print(f"Warning: Skipping invalid JSON line in {self.config.jsonl_file}")
-
-        return results
+        # All retries exhausted
+        logger.error(f"Failed to score '{title}' after {max_retries + 1} attempts. Last error: {last_error}")
+        return {
+            "title": title,
+            "score": -1.0,
+            "evaluation": f"Error: {last_error}",
+            "proposal": proposal,
+            "retries": retry_count,
+            "success": False
+        }
 
     async def score_research_proposal(self, data: List[Any]) -> List[Dict]:
         """
-        Score abstracts using the configured model type.
+        Score one or more research proposals.
+
+        Main entry point for reward model evaluation. Accepts either:
+        - List of strings (proposals)
+        - List of dicts with 'title', 'abstract', and optional 'gt_score'
 
         Args:
-            data (List[Dict]): List of dictionaries containing 'title', 'abstract', and 'gt_score'.
+            data (List[Any]): Proposals to score.
 
         Returns:
-            List[Dict]: List of results with 'title', 'score', 'evaluation', 'abstract', and 'gt_score'.
+            List[Dict]: Results with scores and evaluations.
         """
-        if isinstance(data[0], str):
-            data = [{"title": "", "gt_score":0, "abstract": d} for d in data]
+        # Normalize input format
+        if not data:
+            return []
 
-        if self.config.model_type == "vllm":
-            return await self.score_with_vllm(data)
-        elif self.config.model_type == "api":
-            return await self.score_with_api(data)
-        else:
-            raise ValueError("Invalid model_type. Must be 'vllm' or 'api'.")
+        if isinstance(data[0], str):
+            # Convert string list to dict format
+            data = [{"title": "", "abstract": proposal, "gt_score": 0} for proposal in data]
+
+        logger.info(f"Scoring {len(data)} research proposals...")
+
+        results = []
+        for idx, item in enumerate(data, 1):
+            title = item.get("title", f"Proposal {idx}")
+            proposal = item.get("abstract", "")
+
+            result = await self._score_single_proposal(
+                proposal=proposal,
+                title=title
+            )
+
+            # Add ground truth score if available
+            result["gt_score"] = item.get("gt_score", 0)
+            results.append(result)
+
+            # Optional: Write to JSONL file for tracking
+            if self.config.jsonl_file and result["success"]:
+                await self._write_result_to_jsonl(result)
+
+        success_count = sum(1 for r in results if r["success"])
+        logger.info(f"Completed scoring: {success_count}/{len(data)} successful")
+
+        return results
+
+    async def _write_result_to_jsonl(self, result: Dict) -> None:
+        """
+        Write a scoring result to JSONL file for tracking.
+
+        Args:
+            result (Dict): Result dictionary to write.
+        """
+        try:
+            # Use synchronous write for simplicity (can be upgraded to aiofiles if needed)
+            with open(self.config.jsonl_file, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(result, ensure_ascii=False) + '\n')
+        except Exception as e:
+            logger.warning(f"Failed to write result to JSONL: {e}")
+
 
 if __name__ == "__main__":
     async def test_reward_model():
+        """Test the reward model with sample proposals."""
         # Sample data for testing
         sample_data = [
             {
@@ -263,45 +295,53 @@ if __name__ == "__main__":
             }
         ]
 
-        # Test with vLLM model (commented out because it requires a local model and GPU)
+        # Configure logging
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
 
-        # try:
-        #     vllm_model = RewardModel(
-        #         model_type="vllm",
-        #         model_name="/data/zhuotaodeng/yzj/alpha_research_model/qwen25_grm_iclr_boxed/checkpoint-180",
-        #         jsonl_file="vllm_results.jsonl"
-        #     )
-        #     vllm_results = await vllm_model.score_research_proposal(sample_data)
-        #     print("vLLM Results:")
-        #     for result in vllm_results:
-        #         print(f"Title: {result['title']}, Score: {result['score']}, Evaluation: {result['evaluation'][:50]}...")
-        # except Exception as e:
-        #     print(f"vLLM test failed: {e}")
-
-
-        # Test with API model (requires valid API key and base URL)
+        # Test with OpenRouter API
         try:
-            # Replace with your actual API key and base URL
-            api_key = "sk-2c3f1f58031b4b86afdb6a8192ea02e2"
-            base_url = "https://api.deepseek.com"
+            import os
+            from dotenv import load_dotenv
+
+            load_dotenv()
+            api_key = os.getenv("OPENROUTER_API_KEY")
+
+            if not api_key:
+                print("ERROR: OPENROUTER_API_KEY not found in environment")
+                return
 
             config = RewardModelConfig(
                 model_type="api",
-                model_name="deepseek-chat",
+                model_name="qwen/qwen-2.5-7b-instruct",  # Fast and cost-effective
                 api_key=api_key,
-                base_url=base_url,
-                jsonl_file="api_results.jsonl",
+                base_url="https://openrouter.ai/api/v1",
+                temperature=0.3,  # Lower temperature for consistency
+                max_tokens=1000,
+                jsonl_file="reward_results.jsonl",
                 max_retries=3,
-                retry_delay=1
-            ) 
-            
-            api_model = RewardModel(config)
-            api_results = await api_model.score_research_proposal(sample_data)
-            print("API Results:")
-            for result in api_results:
-                print(f"Title: {result['title']}, Score: {result['score']}, Evaluation: {result['evaluation'][:50]}...")
-        except Exception as e:
-            print(f"API test failed: {e}")
+                retry_delay=2
+            )
 
-    # Run the async test
+            model = RewardModel(config)
+            results = await model.score_research_proposal(sample_data)
+
+            print("\n" + "=" * 80)
+            print("Reward Model Results:")
+            print("=" * 80)
+            for result in results:
+                print(f"\nTitle: {result['title']}")
+                print(f"Score: {result['score']}/10 (Ground Truth: {result['gt_score']})")
+                print(f"Success: {result['success']}, Retries: {result['retries']}")
+                print(f"Evaluation: {result['evaluation'][:200]}...")
+            print("=" * 80)
+
+        except Exception as e:
+            print(f"Test failed: {e}")
+            import traceback
+            traceback.print_exc()
+
+    # Run the test
     asyncio.run(test_reward_model())

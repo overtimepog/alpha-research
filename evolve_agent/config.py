@@ -149,25 +149,25 @@ class LLMConfig(LLMModelConfig):
 
 @dataclass
 class RewardModelConfig:
-    """Configuration for reward model"""
+    """Configuration for OpenRouter API reward model (LLM-as-a-judge)"""
 
-    model_type: str = "vllm"
+    model_type: str = "api"  # Always "api" (vLLM removed)
     model_name: str = None
 
-    # Generation parameters
-    temperature: float = 0.7
+    # Generation parameters (optimized for consistent evaluation - 2025 best practices)
+    temperature: float = 0.3  # Lower temperature for consistent scoring
     top_p: float = 0.95
-    max_tokens: int = 4096
-    
+    max_tokens: int = 1000  # Sufficient for evaluation + score
+
     # Threshold for generating programs
     proposal_score_threshold: float = 5.5  # Only generate programs if proposal score >= threshold
 
-    # Request parameters of API models
-    api_key: Optional[str] = None
-    base_url: Optional[str] = None
-    jsonl_file: str = "results.jsonl"
-    max_retries: int = 50
-    retry_delay: int = 5
+    # OpenRouter API parameters (required)
+    api_key: Optional[str] = None  # Use ${OPENROUTER_API_KEY} in configs
+    base_url: Optional[str] = None  # https://openrouter.ai/api/v1
+    jsonl_file: str = "results/reward_results.jsonl"
+    max_retries: int = 5  # Exponential backoff implemented in reward_model
+    retry_delay: int = 2  # Base delay in seconds (exponential backoff)
 
 @dataclass
 class PromptConfig:
