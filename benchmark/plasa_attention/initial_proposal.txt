@@ -4,7 +4,7 @@ Objective
 =========
 Optimize the implementation of Per-Layer Adaptive Sparse Attention (PLASA) to achieve
 the lowest validation perplexity on a 4-layer transformer language model trained on
-WikiText-2 for 1000 steps.
+cosmopedia-v2 for 1000 steps.
 
 PLASA uses progressive sparsity scheduling based on layer specialization research:
 - Early layers (0-33%): Dense attention (k=L) for local pattern recognition

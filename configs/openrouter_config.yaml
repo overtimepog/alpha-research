@@ -13,11 +13,11 @@ random_seed: null
 diff_based_evolution: true
 allow_full_rewrites: false
 max_code_length: 100000
-max_diff_generation_retries: 3        # Maximum retries for LLM diff generation failures
+max_diff_generation_retries: 5        # Maximum retries for LLM diff generation failures
 
 # Changes documentation settings
 generate_changes_doc: true            # Auto-generate changes.md explaining code evolution
-changes_doc_max_retries: 3            # Maximum retries for changes documentation LLM generation
+changes_doc_max_retries: 5            # Maximum retries for changes documentation LLM generation
 
 # LLM configuration - OpenRouter API
 llm:
@@ -49,7 +49,7 @@ llm:
 
   # Request parameters
   timeout: 300
-  retries: 3
+  retries: 5
   retry_delay: 5
 
 # Prompt configuration

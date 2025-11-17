@@ -1,19 +1,12 @@
 """
-Adaptive Per-Layer Sparse Attention Implementation
+Adaptive Per-Layer Sparse Attention Implementation - EXACT COPY FROM EXP3
 
-This module implements sparse attention with layer-specific top-k values.
-Based on research showing different layers specialize in different functions:
-- Early layers: Local patterns, short-range dependencies
-- Middle layers: Feature composition, functionally redundant
-- Late layers: Global context consolidation, semantic abstraction
+This is a direct copy of the working exp3 implementation files:
+- adaptive_sparse_attention.py
+- exp3_models.py (PLASAQwen3 components)
+- Qwen3Next components from modeling_qwen3_next.py
 
-Key Innovation: Each layer has a different sparsity budget (k value) optimized
-for its functional role in the transformer hierarchy.
-
-References:
-- "Learning to Skip the Middle Layers of Transformers" (2025)
-- "Transformer Layers as Painters" - Emergence.ai (2025)
-- DeepSeek-V3.2-Exp Lightning Indexer
+This ensures exact reproducibility of exp3 results.
 """
 
 import torch
@@ -24,6 +17,8 @@ from typing import Optional, Tuple, List, Dict
 from dataclasses import dataclass
 from enum import Enum
 
+
+# ==================== EXACT COPY: adaptive_sparse_attention.py ====================
 
 class SparsitySchedule(Enum):
     """Predefined sparsity schedules for different hypotheses"""
@@ -230,6 +225,24 @@ class AdaptiveTopKSelector(nn.Module):
     def __init__(self, default_top_k: int = 512):
         super().__init__()
         self.default_top_k = default_top_k
+        self._causal_mask_cache: Dict[Tuple[int, int, str], torch.Tensor] = {}
+
+    def _get_causal_mask(
+        self,
+        seq_len_q: int,
+        seq_len_k: int,
+        device: torch.device,
+    ) -> torch.Tensor:
+        device_str = f"{device.type}:{device.index if device.index is not None else 0}"
+        key = (seq_len_q, seq_len_k, device_str)
+        mask = self._causal_mask_cache.get(key)
+        if mask is None:
+            mask = torch.triu(
+                torch.ones(seq_len_q, seq_len_k, device=device),
+                diagonal=1
+            ).bool()
+            self._causal_mask_cache[key] = mask
+        return mask
 
     def forward(
         self,
@@ -257,10 +270,11 @@ class AdaptiveTopKSelector(nn.Module):
 
         # Apply causal mask: token t can only attend to tokens <= t
         if apply_causal_mask:
-            causal_mask = torch.triu(
-                torch.ones(seq_len_q, seq_len_k, device=index_scores.device),
-                diagonal=1
-            ).bool()
+            causal_mask = self._get_causal_mask(
+                seq_len_q,
+                seq_len_k,
+                index_scores.device
+            )
             index_scores = index_scores.masked_fill(causal_mask.unsqueeze(0), -1e9)
 
         # Select top-k indices for each query token
@@ -339,6 +353,17 @@ class AdaptiveSparseAttention(nn.Module):
         # Adaptive token selector
         self.selector = AdaptiveTopKSelector(default_top_k=layer_top_k)
 
+        # Lightweight gate for per-layer top-k scaling
+        gate_hidden = max(16, d_model // 8)
+        self.k_gate = nn.Sequential(
+            nn.Linear(d_model, gate_hidden),
+            nn.ReLU(),
+            nn.Linear(gate_hidden, 1),
+            nn.Sigmoid()
+        )
+        self.k_gate_min = 0.5
+        self.k_gate_max = 1.5
+
         # Whether to use sparse attention
         self.use_sparse = True
 
@@ -375,10 +400,15 @@ class AdaptiveSparseAttention(nn.Module):
             # Compute index scores
             index_scores = self.indexer(x)
 
-            # Select top-k tokens (using layer-specific k)
+            gate_input = x.mean(dim=1)
+            gate_score = self.k_gate(gate_input).mean()
+            gate_factor = (0.75 + 0.5 * gate_score).clamp(self.k_gate_min, self.k_gate_max)
+            adaptive_k_value = torch.clamp(gate_factor * float(self.layer_top_k), 1.0, float(seq_len))
+            adaptive_k = int(adaptive_k_value.item())
+
             top_k_mask, top_k_indices, selector_stats = self.selector(
                 index_scores,
-                top_k=self.layer_top_k,
+                top_k=adaptive_k,
                 apply_causal_mask=True
             )
 
@@ -400,7 +430,8 @@ class AdaptiveSparseAttention(nn.Module):
             if return_stats:
                 stats = {
                     'layer_idx': self.layer_idx,
-                    'layer_k': self.layer_top_k,
+                    'layer_k': adaptive_k,
+                    'k_gate_factor': gate_factor.item(),
                     **selector_stats
                 }
         else:
@@ -439,99 +470,107 @@ class AdaptiveSparseAttention(nn.Module):
         self.selector.default_top_k = new_k
 
 
-def print_schedule_info(config: LayerSparsityConfig, n_layers: int):
-    """Print detailed information about a sparsity schedule"""
-    print(f"\n{'='*80}")
-    print(f"Sparsity Schedule: {config.schedule_name}")
-    print(f"{'='*80}")
-    print(f"Description: {config.description}")
-    print(f"\nPer-Layer Configuration:")
-    print(f"{'Layer':<10} {'k Ratio':<15} {'Function':<30}")
-    print(f"{'-'*80}")
-
-    for i in range(n_layers):
-        ratio = config.layer_k_ratios[i] if i < len(config.layer_k_ratios) else config.layer_k_ratios[-1]
-
-        # Categorize layer
-        early_cutoff = n_layers // 3
-        middle_cutoff = 2 * n_layers // 3
-        if i < early_cutoff:
-            function = "Early (local patterns)"
-        elif i < middle_cutoff:
-            function = "Middle (feature composition)"
-        else:
-            function = "Late (global context)"
-
-        print(f"Layer {i:<4} {ratio:<15.2%} {function:<30}")
-    print(f"{'='*80}\n")
-
-
-# ================= Qwen3-Next Components (Fallback) =================
-
-import torch.nn.functional as F
-import math
+# ==================== EXACT COPY: Qwen3Next Components ====================
 
 class Qwen3NextRMSNorm(nn.Module):
-    def __init__(self, hidden_size, eps=1e-6):
+    def __init__(self, dim: int, eps: float = 1e-6):
         super().__init__()
-        self.weight = nn.Parameter(torch.ones(hidden_size))
-        self.variance_epsilon = eps
+        self.eps = eps
+        self.weight = nn.Parameter(torch.zeros(dim))
 
-    def forward(self, hidden_states):
-        input_dtype = hidden_states.dtype
-        hidden_states = hidden_states.to(torch.float32)
-        variance = hidden_states.pow(2).mean(-1, keepdim=True)
-        hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
-        return self.weight * hidden_states.to(input_dtype)
+    def _norm(self, x):
+        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+
+    def forward(self, x):
+        output = self._norm(x.float())
+        # Llama does x.to(float16) * w whilst Qwen3Next is (x * w).to(float16)
+        # See https://github.com/huggingface/transformers/pull/29402
+        output = output * (1.0 + self.weight.float())
+        return output.type_as(x)
 
 
 class Qwen3NextMLP(nn.Module):
-    def __init__(self, config=None, intermediate_size=512, hidden_size=128):
+    def __init__(self, config, intermediate_size=None):
         super().__init__()
-        if config:
-            hidden_size = getattr(config, 'hidden_size', 128)
-            intermediate_size = intermediate_size or hidden_size * 4
-        self.gate_proj = nn.Linear(hidden_size, intermediate_size, bias=False)
-        self.up_proj = nn.Linear(hidden_size, intermediate_size, bias=False)
-        self.down_proj = nn.Linear(intermediate_size, hidden_size, bias=False)
+        self.config = config
+        self.hidden_size = config.hidden_size
+        self.intermediate_size = config.intermediate_size if intermediate_size is None else intermediate_size
+        self.gate_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=False)
+        self.up_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=False)
+        self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=False)
 
     def forward(self, x):
-        return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
+        down_proj = self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
+        return down_proj
+
+
+class Qwen3NextExperts(nn.ModuleList):
+    """
+    ModuleList of experts.
+    """
+
+    def __init__(self, config):
+        super().__init__()
+        self.num_experts = config.num_experts
+        for _ in range(config.num_experts):
+            self.append(Qwen3NextMLP(config, intermediate_size=config.moe_intermediate_size))
+
+    def forward(
+        self, hidden_states: torch.Tensor, top_k_index: torch.Tensor, top_k_weights: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Args:
+            hidden_states: (batch_size * sequence_length, hidden_dim)
+            selected_experts: (batch_size * sequence_length, top_k)
+            routing_weights: (batch_size * sequence_length, top_k)
+        Returns:
+            (batch_size * sequence_length, hidden_dim)
+        """
+        final_hidden_states = torch.zeros_like(hidden_states)
+        expert_mask = torch.nn.functional.one_hot(top_k_index, num_classes=self.num_experts).permute(2, 1, 0)
+
+        expert_hit = torch.greater(expert_mask.sum(dim=(-1, -2)), 0).nonzero()
+        for expert_idx in expert_hit:
+            idx, top_x = torch.where(expert_mask[expert_idx].squeeze(0))
+            current_state = hidden_states[None, top_x].reshape(-1, hidden_states.shape[-1])
+            current_hidden_states = self[expert_idx](current_state) * top_k_weights[top_x, idx, None]
+            final_hidden_states.index_add_(0, top_x, current_hidden_states.to(hidden_states.dtype))
+        return final_hidden_states
 
 
 class Qwen3NextSparseMoeBlock(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.hidden_dim = config.hidden_size
-        self.num_experts = config.num_experts
-        self.top_k = config.num_experts_per_tok
-        self.gate = nn.Linear(self.hidden_dim, self.num_experts, bias=False)
-        self.experts = nn.ModuleList([
-            Qwen3NextMLP(intermediate_size=config.moe_intermediate_size, hidden_size=self.hidden_dim)
-            for _ in range(self.num_experts)
-        ])
+        # gating
+        self.gate = nn.Linear(config.hidden_size, config.num_experts, bias=False)
+        self.experts = Qwen3NextExperts(config)
+        self.num_experts_per_tok = config.num_experts_per_tok
+        self.norm_topk_prob = config.norm_topk_prob
 
-    def forward(self, hidden_states):
-        batch_size, seq_len, hidden_dim = hidden_states.shape
-        hidden_states_flat = hidden_states.view(-1, hidden_dim)
-        router_logits = self.gate(hidden_states_flat)
-        routing_weights = F.softmax(router_logits, dim=1)
-        routing_weights, selected_experts = torch.topk(routing_weights, self.top_k, dim=-1)
-        routing_weights /= routing_weights.sum(dim=-1, keepdim=True)
+        self.shared_expert = Qwen3NextMLP(config, intermediate_size=config.shared_expert_intermediate_size)
+        self.shared_expert_gate = torch.nn.Linear(config.hidden_size, 1, bias=False)
 
-        final_hidden_states = torch.zeros_like(hidden_states_flat)
-        for expert_idx in range(self.num_experts):
-            expert_layer = self.experts[expert_idx]
-            expert_mask = (selected_experts == expert_idx).any(dim=-1)
-            if expert_mask.any():
-                expert_input = hidden_states_flat[expert_mask]
-                expert_output = expert_layer(expert_input)
-                token_indices = expert_mask.nonzero(as_tuple=True)[0]
-                expert_positions = (selected_experts[expert_mask] == expert_idx).nonzero(as_tuple=True)[1]
-                weights = routing_weights[expert_mask, expert_positions].unsqueeze(-1)
-                final_hidden_states[expert_mask] += expert_output * weights
+    def route_tokens_to_experts(self, hidden_states, router_logits):
+        routing_weights = F.softmax(router_logits, dim=-1, dtype=torch.float)
+        routing_weights, selected_experts = torch.topk(routing_weights, self.num_experts_per_tok, dim=-1)
+        if self.norm_topk_prob:
+            routing_weights /= routing_weights.sum(dim=-1, keepdim=True)
+        routing_weights = routing_weights.to(hidden_states.dtype)
+        return selected_experts, routing_weights
 
-        return final_hidden_states.view(batch_size, seq_len, hidden_dim)
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        batch_size, sequence_length, hidden_dim = hidden_states.shape
+        hidden_states_reshaped = hidden_states.view(-1, hidden_dim)
+        shared_expert_output = self.shared_expert(hidden_states_reshaped)
+        router_logits = self.gate(hidden_states_reshaped)
+        selected_experts, routing_weights = self.route_tokens_to_experts(hidden_states_reshaped, router_logits)
+        expert_output = self.experts(hidden_states_reshaped, selected_experts, routing_weights)
+
+        shared_expert_output = F.sigmoid(self.shared_expert_gate(hidden_states_reshaped)) * shared_expert_output
+
+        expert_output += shared_expert_output
+        expert_output = expert_output.reshape(batch_size, sequence_length, hidden_dim)
+        return expert_output
 
 
 class Qwen3NextRotaryEmbedding(nn.Module):
@@ -570,14 +609,12 @@ class Qwen3NextConfig:
             setattr(self, k, v)
 
 
-# ==================== EXACT Exp3 PLASAQwen3 Implementation ====================
+# ==================== EXACT COPY: exp3_models.py (PLASAQwen3) ====================
 
 class PLASADecoderLayer(nn.Module):
     """
     Decoder layer that uses Per-Layer Adaptive Sparse Attention for ALL attention
     (replaces both full_attention and linear_attention)
-
-    EXACT COPY from exp3_models.py lines 49-110
     """
     def __init__(self, config, layer_idx: int, layer_top_k: int):
         super().__init__()
@@ -641,8 +678,6 @@ class PLASAQwen3Model(nn.Module):
     """
     Variant 2: All attention layers replaced with Per-Layer Adaptive Sparse Attention
     Uses PROGRESSIVE_SPARSE schedule: Early=Dense, Middle=L/4, Late=L/2
-
-    EXACT COPY from exp3_models.py lines 202-277
     """
     def __init__(self, config):
         super().__init__()
@@ -718,11 +753,7 @@ class PLASAQwen3Model(nn.Module):
 
 
 class PLASAQwen3(nn.Module):
-    """
-    Variant 2: Per-Layer Adaptive Sparse Attention (PLASA)-Only Qwen3 (for CausalLM)
-
-    EXACT COPY from exp3_models.py lines 280-309
-    """
+    """Variant 2: Per-Layer Adaptive Sparse Attention (PLASA)-Only Qwen3 (for CausalLM)"""
     def __init__(self, config):
         super().__init__()
         self.config = config
@@ -774,7 +805,7 @@ class PLASAModel(nn.Module):
     ):
         super().__init__()
 
-        # Create Qwen3NextConfig from evaluator parameters (matching exp3)
+        # Create Qwen3NextConfig from evaluator parameters (EXACT match with exp3)
         config = Qwen3NextConfig(
             vocab_size=vocab_size,
             hidden_size=hidden_size,
@@ -783,13 +814,14 @@ class PLASAModel(nn.Module):
             num_key_value_heads=num_kv_heads,
             head_dim=head_dim,
             intermediate_size=intermediate_size,
-            max_position_embeddings=512,  # exp3 uses 512, not max_seq_len!
+            max_position_embeddings=512,  # EXACT match with exp3
             rope_theta=10000.0,
             attention_dropout=dropout,
-            hidden_dropout_prob=dropout,  # exp3 uses this
-            partial_rotary_factor=1.0,  # exp3 uses this
+            hidden_dropout_prob=dropout,
+            partial_rotary_factor=1.0,
             rms_norm_eps=rms_norm_eps,
             pad_token_id=0,
+            hidden_act='silu',  # Add this
             # MoE parameters (EXACT match with exp3)
             num_experts=4,
             num_local_experts=4,
@@ -798,9 +830,10 @@ class PLASAModel(nn.Module):
             moe_intermediate_size=256,
             shared_expert_intermediate_size=0,
             mlp_only_layers=[],
+            norm_topk_prob=True,
             # PLASA parameters (EXACT match with exp3)
             indexer_heads=4,
-            indexer_dim=32,  # exp3 uses 32, not 64!
+            indexer_dim=64,  # EXACT match with exp3 (not 32!)
         )
 
         # Set attention implementation (required for full_attention layers)

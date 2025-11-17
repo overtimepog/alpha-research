@@ -12,7 +12,11 @@
       "Bash(git commit -m \"$(cat <<''EOF''\nfeat: Add robust numerical stability validation and LLM retry logic\n\nImplement comprehensive defense-in-depth validation for NaN/Inf metrics across the evolution pipeline, plus retry logic for LLM diff generation failures. This enhances system reliability by catching numerical instability early and recovering from transient LLM generation issues.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
       "WebFetch(domain:arxiv.org)",
       "WebFetch(domain:blog.vllm.ai)",
-      "WebFetch(domain:*)"
+      "WebFetch(domain:*)",
+      "WebFetch(domain:kellerjordan.github.io)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:medium.com)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []
