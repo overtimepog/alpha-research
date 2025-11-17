@@ -330,6 +330,29 @@ def evaluate(program_path: str = "initial_program.py") -> Dict:
             0.1 * norm_val_loss       # Normalized & inverted: lower val_loss = higher score
         )
 
+        # Validate metrics for NaN/Inf before returning (Research: PyTorch AMP best practices 2025)
+        # This ensures numerical instability triggers the bug fixing loop instead of cascading failures
+        import math
+        metrics_to_check = {
+            "perplexity": val_metrics['perplexity'],
+            "accuracy": val_metrics['accuracy'],
+            "train_loss": train_loss,
+            "val_loss": val_metrics['loss'],
+            "score": score,
+            "combined_score": combined_score
+        }
+
+        for metric_name, metric_value in metrics_to_check.items():
+            if math.isnan(metric_value) or math.isinf(metric_value):
+                # Convert NaN/Inf to error format to trigger bug fixing
+                return {
+                    "error": -1.0,
+                    "error_type": "InvalidMetricValue",
+                    "error_message": f"Metric '{metric_name}' has invalid value: {metric_value}",
+                    "traceback": f"NaN or Inf detected in {metric_name} during evaluation. This indicates numerical instability during training.",
+                    "failure_stage": "evaluation"
+                }
+
         return {
             "score": float(score),
             "perplexity": float(val_metrics['perplexity']),

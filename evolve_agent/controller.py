@@ -597,34 +597,82 @@ Return the proposal as a clear, concise research abstract."""
                 proposal_score=new_proposal_score,
             )
 
-            # Generate code modification
+            # Generate code modification with retry logic (Research: LLM code generation best practices 2025)
+            # Implements exponential backoff and feedback-driven prompt refinement on retries
+            child_code = None
+            changes_summary = None
+            max_retries = self.config.max_diff_generation_retries
+
             try:
-                llm_response = await self.llm_ensemble.generate_with_context(
-                    system_message=prompt["system"],
-                    messages=[{"role": "user", "content": prompt["user"]}],
-                )
+                for retry_attempt in range(max_retries):
+                    # Generate with potentially enhanced prompt on retries
+                    current_prompt = prompt.copy()
+                    if retry_attempt > 0:
+                        # Enhance prompt with explicit feedback about the failure
+                        current_prompt["user"] += (
+                            f"\n\nIMPORTANT: Previous attempt {retry_attempt} failed to generate valid "
+                            f"{'diff blocks' if self.config.diff_based_evolution else 'code'}. "
+                            f"Please ensure your response contains properly formatted "
+                            f"{'<<<<<<< SEARCH / ======= / >>>>>>> REPLACE blocks' if self.config.diff_based_evolution else 'code blocks'}."
+                        )
 
-                # Parse the response
-                if self.config.diff_based_evolution:
-                    diff_blocks = extract_diffs(llm_response)
-                    if not diff_blocks:
-                        logger.warning(f"Iteration {i+1}: No valid diffs found in response")
-                        continue
-                    # Apply the diffs
-                    child_code = apply_diff(parent.code, llm_response)
-                    changes_summary = format_diff_summary(diff_blocks)
+                    llm_response = await self.llm_ensemble.generate_with_context(
+                        system_message=current_prompt["system"],
+                        messages=[{"role": "user", "content": current_prompt["user"]}],
+                    )
 
-                    logger.info(f"Diff is applied successfully! ")
-                else:
-                    # Parse full rewrite
-                    new_code = parse_full_rewrite(llm_response, self.language)
+                    # Parse the response
+                    if self.config.diff_based_evolution:
+                        diff_blocks = extract_diffs(llm_response)
+                        if not diff_blocks:
+                            if retry_attempt < max_retries - 1:
+                                # Exponential backoff: 0.5s, 1s, 2s
+                                delay = 0.5 * (2 ** retry_attempt)
+                                logger.warning(
+                                    f"Iteration {i+1}: No valid diffs found (attempt {retry_attempt+1}/{max_retries}), "
+                                    f"retrying in {delay}s..."
+                                )
+                                await asyncio.sleep(delay)
+                                continue
+                            else:
+                                logger.warning(
+                                    f"Iteration {i+1}: No valid diffs found after {max_retries} attempts, "
+                                    f"skipping iteration"
+                                )
+                                break
 
-                    if not new_code:
-                        logger.warning(f"Iteration {i+1}: No valid code found in response")
-                        continue
+                        # Success! Apply the diffs
+                        child_code = apply_diff(parent.code, llm_response)
+                        changes_summary = format_diff_summary(diff_blocks)
+                        logger.info(f"Diff is applied successfully{' (after ' + str(retry_attempt) + ' retries)' if retry_attempt > 0 else ''}!")
+                        break
+                    else:
+                        # Parse full rewrite
+                        new_code = parse_full_rewrite(llm_response, self.language)
 
-                    child_code = new_code
-                    changes_summary = "Full rewrite"
+                        if not new_code:
+                            if retry_attempt < max_retries - 1:
+                                delay = 0.5 * (2 ** retry_attempt)
+                                logger.warning(
+                                    f"Iteration {i+1}: No valid code found (attempt {retry_attempt+1}/{max_retries}), "
+                                    f"retrying in {delay}s..."
+                                )
+                                await asyncio.sleep(delay)
+                                continue
+                            else:
+                                logger.warning(
+                                    f"Iteration {i+1}: No valid code found after {max_retries} attempts, "
+                                    f"skipping iteration"
+                                )
+                                break
+
+                        child_code = new_code
+                        changes_summary = "Full rewrite"
+                        break
+
+                # If we failed all retries, skip this iteration
+                if child_code is None:
+                    continue
 
                 # Check code length
                 if len(child_code) > self.config.max_code_length:
@@ -640,6 +688,23 @@ Return the proposal as a clear, concise research abstract."""
 
                 # Handle artifacts if they exist
                 artifacts = self.evaluator.get_pending_artifacts(child_id)
+
+                # Defense-in-depth: Validate metrics for NaN/Inf values (Research: PyTorch gradient monitoring 2025)
+                # This catches any NaN/Inf that might slip through the evaluator validation
+                import math
+                if "error" not in child_metrics:  # Only check if not already an error
+                    for metric_name, metric_value in child_metrics.items():
+                        if isinstance(metric_value, (int, float)) and (math.isnan(metric_value) or math.isinf(metric_value)):
+                            logger.warning(f"Iteration {i+1}: Detected invalid {metric_name}={metric_value}, converting to error format")
+                            # Convert to error format to trigger bug fixing
+                            child_metrics = {
+                                "error": -1.0,
+                                "error_type": "InvalidMetricValue",
+                                "error_message": f"Metric '{metric_name}' has invalid value: {metric_value}",
+                                "traceback": f"NaN or Inf detected in {metric_name} after evaluation (defense-in-depth check)",
+                                "failure_stage": "evaluation"
+                            }
+                            break
 
                 # Check if program has an error and attempt to fix it
                 has_error = "error" in child_metrics and child_metrics.get("error", 0) < 0

@@ -296,6 +296,7 @@ class Config:
     diff_based_evolution: bool = True
     allow_full_rewrites: bool = False
     max_code_length: int = 10000
+    max_diff_generation_retries: int = 3  # Maximum retries for LLM diff generation (Research: LLM retry strategies 2025)
 
     @classmethod
     def from_yaml(cls, path: Union[str, Path]) -> "Config":

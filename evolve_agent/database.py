@@ -160,6 +160,19 @@ class ProgramDatabase:
         Returns:
             Program ID
         """
+        # Defense-in-depth: Validate metrics for NaN/Inf before adding to database
+        # This prevents corrupted programs from polluting the population (Research: PyTorch AMP 2025)
+        import math
+        if program.metrics and "error" not in program.metrics:
+            for metric_name, metric_value in program.metrics.items():
+                if isinstance(metric_value, (int, float)) and (math.isnan(metric_value) or math.isinf(metric_value)):
+                    logger.warning(
+                        f"Rejected program {program.id} with invalid {metric_name}={metric_value}. "
+                        f"Programs with NaN/Inf should be caught earlier and trigger bug fixing."
+                    )
+                    # Don't add the program - it should have been fixed or rejected earlier
+                    return None
+
         # Store the program
         # If iteration is provided, update the program's iteration_found
         if iteration is not None:
