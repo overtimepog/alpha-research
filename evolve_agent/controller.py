@@ -1214,11 +1214,10 @@ Return the proposal as a clear, concise research abstract."""
         Args:
             program: The new best program to save
         """
-        # Determine the directory from config or use default
-        if self.config.best_solution_dir:
-            best_solution_dir = self.config.best_solution_dir
-        else:
-            best_solution_dir = os.path.join(self.output_dir, "best_solution")
+        # Always use benchmark-specific results directory
+        # This ensures each benchmark has its own best solution
+        benchmark_dir = os.path.dirname(self.initial_program_path)
+        best_solution_dir = os.path.join(benchmark_dir, "results", "best_solution")
 
         os.makedirs(best_solution_dir, exist_ok=True)
 
