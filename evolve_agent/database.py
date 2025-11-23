@@ -241,18 +241,21 @@ class ProgramDatabase:
         """
         return self.programs.get(program_id)
 
-    def sample(self) -> Tuple[Program, List[Program]]:
+    def sample(self, toxic_programs: Optional[Set[str]] = None) -> Tuple[Program, List[Program]]:
         """
         Sample a program and inspirations for the next evolution step
+
+        Args:
+            toxic_programs: Optional set of toxic program IDs to exclude from sampling
 
         Returns:
             Tuple of (parent_program, inspiration_programs)
         """
         # Select parent program
-        parent = self._sample_parent()
+        parent = self._sample_parent(toxic_programs=toxic_programs)
 
         # Select inspirations
-        inspirations = self._sample_inspirations(parent, n=5)
+        inspirations = self._sample_inspirations(parent, n=5, toxic_programs=toxic_programs)
 
         logger.debug(f"Sampled parent {parent.id} and {len(inspirations)} inspirations")
         return parent, inspirations
@@ -775,9 +778,29 @@ class ProgramDatabase:
                     valid_programs.append(pid)
         return valid_programs
 
-    def _sample_parent(self) -> Program:
+
+    def _filter_toxic_programs(self, program_ids: List[str], toxic_programs: Optional[Set[str]] = None) -> List[str]:
+        """
+        Filter out programs that are marked as toxic.
+
+        Args:
+            program_ids: List of program IDs to filter
+            toxic_programs: Set of toxic program IDs to exclude (if None, no filtering)
+
+        Returns:
+            List of program IDs without toxic programs
+        """
+        if toxic_programs is None or not toxic_programs:
+            return program_ids
+
+        return [pid for pid in program_ids if pid not in toxic_programs]
+
+    def _sample_parent(self, toxic_programs: Optional[Set[str]] = None) -> Program:
         """
         Sample a parent program from the current island for the next evolution step
+
+        Args:
+            toxic_programs: Optional set of toxic program IDs to exclude from sampling
 
         Returns:
             Parent program from current island
@@ -787,17 +810,20 @@ class ProgramDatabase:
 
         if rand_val < self.config.exploration_ratio:
             # EXPLORATION: Sample from current island (diverse sampling)
-            return self._sample_exploration_parent()
+            return self._sample_exploration_parent(toxic_programs=toxic_programs)
         elif rand_val < self.config.exploration_ratio + self.config.exploitation_ratio:
             # EXPLOITATION: Sample from archive (elite programs)
-            return self._sample_exploitation_parent()
+            return self._sample_exploitation_parent(toxic_programs=toxic_programs)
         else:
             # RANDOM: Sample from any program (remaining probability)
-            return self._sample_random_parent()
+            return self._sample_random_parent(toxic_programs=toxic_programs)
 
-    def _sample_exploration_parent(self) -> Program:
+    def _sample_exploration_parent(self, toxic_programs: Optional[Set[str]] = None) -> Program:
         """
         Sample a parent for exploration (from current island)
+
+        Args:
+            toxic_programs: Optional set of toxic program IDs to exclude from sampling
         """
         current_island_programs = self.islands[self.current_island]
 
@@ -814,9 +840,10 @@ class ProgramDatabase:
                 # Use any available program
                 return next(iter(self.programs.values()))
 
-        # Clean up stale references and filter out error programs
+        # Clean up stale references and filter out error programs and toxic programs
         valid_programs = [pid for pid in current_island_programs if pid in self.programs]
         valid_programs = self._filter_error_programs(valid_programs)
+        valid_programs = self._filter_toxic_programs(valid_programs, toxic_programs)
 
         # Remove stale program IDs from island
         if len(valid_programs) < len(current_island_programs):
@@ -844,17 +871,21 @@ class ProgramDatabase:
         parent_id = random.choice(valid_programs)
         return self.programs[parent_id]
 
-    def _sample_exploitation_parent(self) -> Program:
+    def _sample_exploitation_parent(self, toxic_programs: Optional[Set[str]] = None) -> Program:
         """
         Sample a parent for exploitation (from archive/elite programs)
+
+        Args:
+            toxic_programs: Optional set of toxic program IDs to exclude from sampling
         """
         if not self.archive:
             # Fallback to exploration if no archive
-            return self._sample_exploration_parent()
+            return self._sample_exploration_parent(toxic_programs=toxic_programs)
 
-        # Clean up stale references and filter out error programs
+        # Clean up stale references and filter out error programs and toxic programs
         valid_archive = [pid for pid in self.archive if pid in self.programs]
         valid_archive = self._filter_error_programs(valid_archive)
+        valid_archive = self._filter_toxic_programs(valid_archive, toxic_programs)
 
         # Remove stale program IDs from archive
         if len(valid_archive) < len(self.archive):
@@ -868,7 +899,7 @@ class ProgramDatabase:
             logger.warning(
                 "Archive has no valid programs after cleanup, falling back to exploration"
             )
-            return self._sample_exploration_parent()
+            return self._sample_exploration_parent(toxic_programs=toxic_programs)
 
         # Prefer programs from current island in archive
         archive_programs_in_island = [
@@ -885,16 +916,20 @@ class ProgramDatabase:
             parent_id = random.choice(valid_archive)
             return self.programs[parent_id]
 
-    def _sample_random_parent(self) -> Program:
+    def _sample_random_parent(self, toxic_programs: Optional[Set[str]] = None) -> Program:
         """
         Sample a completely random parent from all programs
+
+        Args:
+            toxic_programs: Optional set of toxic program IDs to exclude from sampling
         """
         if not self.programs:
             raise ValueError("No programs available for sampling")
 
-        # Filter out error programs and sample randomly
+        # Filter out error programs and toxic programs, then sample randomly
         all_program_ids = list(self.programs.keys())
         valid_program_ids = self._filter_error_programs(all_program_ids)
+        valid_program_ids = self._filter_toxic_programs(valid_program_ids, toxic_programs)
 
         if not valid_program_ids:
             # If all programs have errors, fall back to any program (shouldn't happen with bug fixer)
@@ -904,13 +939,14 @@ class ProgramDatabase:
         program_id = random.choice(valid_program_ids)
         return self.programs[program_id]
 
-    def _sample_inspirations(self, parent: Program, n: int = 5) -> List[Program]:
+    def _sample_inspirations(self, parent: Program, n: int = 5, toxic_programs: Optional[Set[str]] = None) -> List[Program]:
         """
         Sample inspiration programs for the next evolution step
 
         Args:
             parent: Parent program
             n: Number of inspirations to sample
+            toxic_programs: Optional set of toxic program IDs to exclude from sampling
 
         Returns:
             List of inspiration programs
@@ -922,6 +958,7 @@ class ProgramDatabase:
             self.best_program_id is not None
             and self.best_program_id != parent.id
             and self.best_program_id in self.programs
+            and (toxic_programs is None or self.best_program_id not in toxic_programs)
         ):
             best_program = self.programs[self.best_program_id]
             inspirations.append(best_program)
@@ -937,7 +974,8 @@ class ProgramDatabase:
         top_n = max(1, int(n * self.config.elite_selection_ratio))
         top_programs = self.get_top_programs(n=top_n)
         for program in top_programs:
-            if program.id not in [p.id for p in inspirations] and program.id != parent.id:
+            is_toxic = toxic_programs is not None and program.id in toxic_programs
+            if program.id not in [p.id for p in inspirations] and program.id != parent.id and not is_toxic:
                 inspirations.append(program)
 
         # Add diverse programs using config.num_diverse_programs
@@ -962,10 +1000,12 @@ class ProgramDatabase:
                 if cell_key in self.feature_map:
                     program_id = self.feature_map[cell_key]
                     # Check if program still exists before adding
+                    is_toxic = toxic_programs is not None and program_id in toxic_programs
                     if (
                         program_id != parent.id
                         and program_id not in [p.id for p in inspirations]
                         and program_id in self.programs
+                        and not is_toxic
                     ):
                         nearby_programs.append(self.programs[program_id])
                     elif program_id not in self.programs:
@@ -982,6 +1022,9 @@ class ProgramDatabase:
                     .union(p.id for p in inspirations)
                     .union(p.id for p in nearby_programs)
                 )
+                # Also exclude toxic programs
+                if toxic_programs is not None:
+                    excluded_ids = excluded_ids.union(toxic_programs)
                 available_ids = list(all_ids - excluded_ids)
 
                 if available_ids:
